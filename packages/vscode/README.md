@@ -10,12 +10,25 @@ Everything runs locally. Prompts are embedded on your machine with a small ONNX 
 
 ## Usage
 
-Press **Ctrl+Alt+H** (macOS **Cmd+Ctrl+H**), or run **Prompt History: Search Prompt History**. Then:
+### Prompt Explorer (full screen)
 
-- Type to search. Keyword and semantic results are fused; an empty query lists your most recent prompts.
+Press **Ctrl+Alt+E** (macOS **Cmd+Ctrl+E**), click **$(history) Prompts** in the status bar, or run **Prompt History: Open Prompt Explorer**.
+
+- **Search bar.** Type words or a description. Results combine keyword and semantic matches; an empty query lists every prompt, newest first. Click **?** for the query syntax.
+- **Filters** (left). Filter by Author (you / agent / skill / system), Source (Agents window, Copilot CLI, autopilot, Chat panel) and Repository. Each count assumes every other filter, so options never disappear. Drag across the **When** histogram to pick a date range.
+- **Table** (center). Click a column header to sort; drag a header edge to resize. A **×N** badge marks prompts sent several times (forks, re-pasted prompts); **Hide duplicates** collapses them. The **Match** column shows why a row matched: **words** means it contains every search word, and the bar shows semantic similarity.
+- **Graph** (center, **G**). The query sits in the middle and results ripple out around it: the closer a dot, the more relevant. Colour = repository; lines join prompts of the same session; dashed lines connect a forked session to its parent. Click a dot to select it, double-click to copy.
+- **Details** (right). The full prompt with matches highlighted, buttons to **Copy**, **Insert into chat**, **Open session** and **Open as document**, and every prompt from the same session (including where a fork branched off).
+- **Keyboard.** `/` focus search · `↑` `↓` move · `Enter` copy · `Ctrl+Enter` insert into chat · `O` open session · `G` toggle graph.
+
+### Quick search
+
+Press **Ctrl+Alt+H** (macOS **Cmd+Ctrl+H**), or run **Prompt History: Quick Search Prompt History**. Then:
+
+- Type to search. An empty query lists your most recent prompts.
 - **Enter** copies the prompt. Change this with `awss.defaultAction`.
-- Each result has buttons to **Copy**, **Insert into chat** (pre-fills the chat input without sending), **Show full prompt**, and **Open / resume session**.
-- The **filter** button in the title bar includes agent, skill and system messages. By default only prompts you typed are shown.
+- Each result has buttons to **Copy**, **Insert into chat** (pre-fills the chat input without sending), **Show full prompt**, and **Open / resume session**. "+N more in this session" means further matches from that session were folded away; open the Explorer to see them all.
+- The **filter** button includes agent, skill and system messages. The **table** button opens the current query in the Explorer.
 
 ### Query syntax
 
@@ -42,7 +55,9 @@ Combine free text with filters, for example `tree view design doc repo:PyRIT aft
 
 ## Using it inside the Agents window
 
-The Agents window runs extensions only if they are explicitly allowed. Run **Prompt History: Enable in Agents Window**, which adds this extension to `extensions.supportAgentsWindow`, then reload the Agents window.
+The Agents window runs extensions only if they are explicitly allowed. This extension offers to enable itself once (from a normal window), or you can run **Prompt History: Enable in Agents Window**, which adds it to `extensions.supportAgentsWindow`. Then reload the Agents window. This is experimental and depends on the VS Code build.
+
+There, the Explorer opens as a full-area tab and adapts to the narrower pane (filters move above the table, details below). The Agents window has no status bar, so use the keyboard shortcuts or the Command Palette.
 
 ## Privacy
 

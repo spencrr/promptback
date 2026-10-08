@@ -26,7 +26,7 @@ try {
 		extensionDevelopmentPath,
 		extensionTestsPath: path.join(here, 'suite.cjs'),
 		launchArgs: ['--disable-extensions', '--user-data-dir', path.join(tmp, 'user'), '--extensions-dir', path.join(tmp, 'ext'), '--disable-workspace-trust', '--skip-welcome'],
-		extensionTestsEnv: { AWSS_HOME: indexDir, AWSS_IT: '1', AWSS_IT_HOLD: process.env.AWSS_IT_HOLD ?? '' },
+		extensionTestsEnv: { AWSS_HOME: indexDir, AWSS_IT: '1', AWSS_IT_HOLD: process.env.AWSS_IT_HOLD ?? '', AWSS_IT_EXPLORER_HOLD: process.env.AWSS_IT_EXPLORER_HOLD ?? '' },
 	});
 	console.log('Integration tests passed');
 } catch (e) {

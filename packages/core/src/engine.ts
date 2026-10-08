@@ -7,12 +7,13 @@ import { DEFAULT_LOCAL_MODEL } from './embed/models.js';
 import type { EmbeddingConfig, EmbeddingProvider } from './embed/provider.js';
 import { copilotHome as defaultCopilotHome, defaultIndexDir, vscodeUserDataRoots } from './paths.js';
 import { type ChunkOptions, DEFAULT_CHUNK_OPTIONS, chunkText } from './search/chunk.js';
+import { CorpusCache } from './search/corpus.js';
 import { DEFAULT_RANKING, type RankingOptions, Searcher } from './search/searcher.js';
 import { type AgentHostDbState, listAgentHostDbs, readAgentHostDb } from './sources/agentHost.js';
 import { type CopilotFileState, copilotSessionKey, listCopilotSessions, readCopilotEvents, readCopilotSessionInfo } from './sources/copilot.js';
-import { chatSessionKey, listChatSessionFiles, readChatSession } from './sources/vscodeChat.js';
+import { listChatSessionFiles, readChatSession } from './sources/vscodeChat.js';
 import { Store, type StoredPrompt } from './store.js';
-import type { IndexStatus, PromptOrigin, PromptRecord, SearchQuery, SearchResult, SessionInfo, SyncProgress, SyncResult } from './types.js';
+import type { ExploreResult, IndexStatus, PromptOrigin, PromptRecord, SearchQuery, SearchResult, SessionInfo, SyncProgress, SyncResult } from './types.js';
 
 export interface EngineOptions {
 	/** Directory for `index.db` and downloaded models. Shared by every window/process. */
@@ -56,6 +57,7 @@ export class PromptSearchEngine {
 	readonly store: Store;
 	readonly indexDir: string;
 	private readonly searcher: Searcher;
+	private readonly corpus: CorpusCache;
 	private provider: EmbeddingProvider | undefined;
 	private providerPromise: Promise<EmbeddingProvider | undefined> | undefined;
 	private providerError: string | undefined;
@@ -72,7 +74,8 @@ export class PromptSearchEngine {
 		this.indexDir = opts.indexDir ?? defaultIndexDir();
 		this.store = new Store(path.join(this.indexDir, 'index.db'));
 		this.chunkOpts = { ...DEFAULT_CHUNK_OPTIONS, ...opts.chunking };
-		this.searcher = new Searcher(this.store, () => this.provider, { ...DEFAULT_RANKING, ...opts.ranking });
+		this.corpus = new CorpusCache(this.store, () => this.provider);
+		this.searcher = new Searcher(this.store, this.corpus, () => this.provider, { ...DEFAULT_RANKING, ...opts.ranking });
 	}
 
 	static open(opts: EngineOptions = {}): PromptSearchEngine {
@@ -160,11 +163,8 @@ export class PromptSearchEngine {
 			const chunker = (text: string) => chunkText(text, this.chunkOpts);
 
 			const home = this.opts.copilotHome === undefined ? defaultCopilotHome() : this.opts.copilotHome;
-			let tPhase = Date.now();
 			if (home) {
 				const r = await this.syncCopilot(home, chunker, errors);
-				this.log(`copilot scan: ${Date.now() - tPhase} ms`);
-				tPhase = Date.now();
 				added += r[0];
 				removed += r[1];
 			}
@@ -175,14 +175,15 @@ export class PromptSearchEngine {
 					added += r[0];
 					removed += r[1];
 				}
-				this.log(`vscode chat scan: ${Date.now() - tPhase} ms`);
-				tPhase = Date.now();
 				await this.syncAgentHostLinks(roots, errors);
-				this.log(`agent-host links: ${Date.now() - tPhase} ms`);
 			}
+			this.log(`Scanned sources in ${Date.now() - t0} ms (+${added} / -${removed} prompts)`);
 			if (added || removed || this.sessionsChanged) {
 				this.sessionsChanged = false;
 				this.bumpRevision();
+			}
+			if (removed && this.provider) {
+				this.store.gcEmbeddings(this.provider.info.fingerprint);
 			}
 			this.store.setMeta('lastSyncAt', String(Date.now()));
 
@@ -256,7 +257,7 @@ export class PromptSearchEngine {
 			}
 		}
 		if (!this.opts.retainDeleted) {
-			for (const file of this.store.listFiles('copilot-events')) {
+			for (const file of eventStates.keys()) {
 				if (!seen.has(file) && !fs.existsSync(file)) {
 					const sessionId = path.basename(path.dirname(file));
 					removed += this.store.transaction(() => {
@@ -273,12 +274,13 @@ export class PromptSearchEngine {
 	private async syncVscodeChat(roots: readonly { product: string; root: string }[], chunker: (t: string) => ReturnType<typeof chunkText>, errors: string[]): Promise<[number, number]> {
 		let added = 0, removed = 0;
 		const seen = new Set<string>();
+		const states = this.store.loadFileStates<{ size: number; mtimeMs: number; key: string }>('vscode-chat');
 		for (const { product, root } of roots) {
 			for (const file of listChatSessionFiles(product, root)) {
 				seen.add(file.path);
 				try {
 					const st = fs.statSync(file.path);
-					const prev = this.store.getFileState<{ size: number; mtimeMs: number; key: string }>(file.path);
+					const prev = states.get(file.path);
 					if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) {
 						continue;
 					}
@@ -303,12 +305,11 @@ export class PromptSearchEngine {
 			}
 		}
 		if (!this.opts.retainDeleted) {
-			for (const file of this.store.listFiles('vscode-chat')) {
+			for (const [file, prev] of states) {
 				if (!seen.has(file) && !fs.existsSync(file)) {
-					const prev = this.store.getFileState<{ key: string }>(file);
 					removed += this.store.transaction(() => {
 						this.store.deleteFile(file);
-						return prev?.key ? this.store.deleteSession(prev.key) : 0;
+						return prev.key ? this.store.deleteSession(prev.key) : 0;
 					});
 				}
 			}
@@ -403,14 +404,34 @@ export class PromptSearchEngine {
 		return done;
 	}
 
+	/** Quick search (top hits, collapsed, capped per session). Waits ≤ 3 s for a cold model, then falls back to keywords. */
 	async search(query: SearchQuery | string): Promise<SearchResult> {
 		const wantsDense = typeof query === 'string' || query.mode !== 'lexical';
-		if (wantsDense && this.embeddingConfig.kind !== 'none' && !this.provider) {
-			// Don't block interactive search on a model download / first load; fall back to keyword results.
-			await Promise.race([this.ensureProvider(), new Promise(r => setTimeout(r, 3000))]);
+		if (wantsDense) {
+			await this.warm(3000);
 		}
 		this.lastUse = Date.now();
 		return this.searcher.search(query);
+	}
+
+	/** Every matching prompt occurrence for the Explorer (an empty query lists everything, newest first). */
+	async explore(query: string): Promise<ExploreResult> {
+		if (query.trim()) {
+			await this.warm(3000);
+		}
+		this.lastUse = Date.now();
+		return this.searcher.explore(query);
+	}
+
+	/** Starts loading the embedding model; resolves when loaded or after `maxWaitMs`. */
+	async warm(maxWaitMs = 0): Promise<void> {
+		if (this.provider || this.embeddingConfig.kind === 'none') {
+			return;
+		}
+		const loading = this.ensureProvider();
+		if (maxWaitMs > 0) {
+			await Promise.race([loading, new Promise(r => setTimeout(r, maxWaitMs))]);
+		}
 	}
 
 	getPrompt(id: string): { prompt: StoredPrompt; session?: SessionInfo } | undefined {
@@ -418,13 +439,11 @@ export class PromptSearchEngine {
 		if (!prompt) {
 			return undefined;
 		}
-		return { prompt, session: this.store.getSessions([prompt.sessionKey]).get(prompt.sessionKey) };
+		return { prompt, session: this.corpus.get().sessions.get(prompt.sessionKey) };
 	}
 
 	getSessionPrompts(sessionKey: string): PromptRecord[] {
-		const rows = this.store.db.prepare('SELECT rowid FROM prompts WHERE session_key = ? ORDER BY seq').all(sessionKey) as { rowid: number }[];
-		const map = this.store.getPromptsByRowid(rows.map(r => Number(r.rowid)));
-		return rows.map(r => map.get(Number(r.rowid))!).filter(Boolean);
+		return this.store.getSessionPrompts(sessionKey);
 	}
 
 	status(): IndexStatus {
@@ -454,8 +473,6 @@ export class PromptSearchEngine {
 		this.store.close();
 	}
 }
-
-export { chatSessionKey, copilotSessionKey };
 
 function mtime(p: string): number | undefined {
 	try {

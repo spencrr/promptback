@@ -33,6 +33,10 @@ export interface SessionInfo {
 	readonly agentHostSessionId?: string;
 	/** Peer chat id inside the agent-host session, when this Copilot session is a secondary chat. */
 	readonly agentHostChatId?: string;
+	/** Session this one was forked from (derived from shared event ids). */
+	readonly forkOf?: string;
+	/** `seq` of this session's last prompt inherited from {@link forkOf}; later prompts are new in the fork. */
+	readonly forkPointSeq?: number;
 	readonly createdAt?: number;
 	readonly updatedAt?: number;
 }
@@ -51,9 +55,10 @@ export interface PromptRecord {
 }
 
 export interface SearchFilters {
-	/** Substring match (case-insensitive) on repository, e.g. `PyRIT`. */
+	/** Substring match (case-insensitive) on repository (falls back to cwd), e.g. `PyRIT`. */
 	readonly repo?: string;
-	/** Substring match on client (`agent-host`, `cli`, `autopilot`, `vscode-chat`). */
+	readonly branch?: string;
+	/** Substring match on client (`vscode-agent-host`, `github/cli`, `github/autopilot`, `vscode-chat`). */
 	readonly client?: string;
 	readonly source?: SourceKind;
 	/** Substring match on cwd / workspace. */
@@ -62,9 +67,13 @@ export interface SearchFilters {
 	readonly after?: number;
 	/** Epoch ms, exclusive. */
 	readonly before?: number;
-	/** Defaults to `['human']`. */
+	/** Defaults to `['human']` for {@link SearchQuery}; all origins for explore. */
 	readonly origins?: readonly PromptOrigin[];
+	/** Session key / id / Agents-window id, or a prefix of one. */
 	readonly sessionKey?: string;
+	readonly model?: string;
+	/** Include trivial acknowledgements ("continue", "yes", ...). Default false for search, true for explore. */
+	readonly includeAcks?: boolean;
 }
 
 export type SearchMode = 'hybrid' | 'semantic' | 'lexical';
@@ -89,6 +98,8 @@ export interface SearchHit {
 	readonly matchRange?: readonly [start: number, end: number];
 	/** Other occurrences of the same text that were collapsed into this hit. */
 	readonly duplicates: readonly { readonly promptId: string; readonly sessionKey: string; readonly timestamp: number }[];
+	/** Further matches from the same session that were left out by the per-session cap. */
+	readonly moreInSession: number;
 }
 
 export interface SearchResult {
@@ -100,6 +111,44 @@ export interface SearchResult {
 	/** True when semantic retrieval was requested but unavailable (no model / embeddings pending). */
 	readonly semanticUnavailable: boolean;
 	readonly hits: readonly SearchHit[];
+	readonly tookMs: number;
+}
+
+/** One prompt occurrence in an explore result (full text is fetched on demand). */
+export interface ExploreRow {
+	readonly id: string;
+	readonly sessionKey: string;
+	/** First ~240 characters. */
+	readonly preview: string;
+	/** Excerpt around the best match when it lies beyond the preview. */
+	readonly snippet?: string;
+	readonly timestamp: number;
+	readonly origin: PromptOrigin;
+	readonly length: number;
+	/** Identical texts share a hash (forks, re-pasted prompts). */
+	readonly hash: string;
+	readonly isAck: boolean;
+	readonly model?: string;
+	readonly seq: number;
+	/** Fused relevance (0 for browse queries). */
+	readonly score: number;
+	/** Best-chunk cosine similarity, when semantic retrieval ran. */
+	readonly similarity?: number;
+	readonly matchedLexical: boolean;
+	readonly matchedSemantic: boolean;
+	readonly matchRange?: readonly [start: number, end: number];
+}
+
+export interface ExploreResult {
+	readonly query: string;
+	readonly freeText: string;
+	readonly mode: SearchMode;
+	readonly semanticUnavailable: boolean;
+	/** Index revision the rows were computed from. */
+	readonly revision: string;
+	/** Every matching occurrence (all prompts for an empty query), best first. Facet filtering happens client-side. */
+	readonly rows: readonly ExploreRow[];
+	readonly sessions: Readonly<Record<string, SessionInfo>>;
 	readonly tookMs: number;
 }
 
@@ -133,3 +182,19 @@ export interface SyncResult {
 	/** False when another process holds the writer lease and this call did nothing. */
 	readonly leader: boolean;
 }
+
+/** A way to reopen or resume the session a prompt came from. */
+export interface SessionOpenTarget {
+	readonly kind: 'agents-window' | 'chat-editor' | 'terminal-resume';
+	readonly label: string;
+	/** URI to open (deep link or chat-session resource). */
+	readonly uri?: string;
+	/** Shell command to resume the session in a terminal. */
+	readonly command?: string;
+	readonly cwd?: string;
+	/** Chat-panel sessions can only be opened from a window on their own workspace. */
+	readonly requiresWorkspace?: string;
+	/** Best-effort targets may fail (e.g. the Agents window only lists external CLI sessions modified in the last 7 days). */
+	readonly bestEffort?: boolean;
+}
+

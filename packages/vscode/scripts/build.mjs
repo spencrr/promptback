@@ -24,6 +24,17 @@ const common = {
 const builds = [
 	{ ...common, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js' },
 	{ ...common, entryPoints: ['../core/src/host.ts'], outfile: 'dist/host.js' },
+	{
+		...common,
+		platform: 'browser',
+		format: 'iife',
+		target: 'es2022',
+		external: [],
+		jsx: 'automatic',
+		jsxImportSource: 'preact',
+		entryPoints: { webview: 'webview/main.tsx' },
+		outdir: 'dist',
+	},
 ];
 
 if (watch) {

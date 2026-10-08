@@ -68,15 +68,37 @@ Runtime measurements (proposal 1, Ryzen AI Max+ 395):
 - DirectML: slower than CPU for this model.
 - Exact cosine over 4.3k vectors takes about 4 ms (35 ms at 50k), so no ANN index is needed.
 
-## Ranking (exact parameters, `search/searcher.ts`)
+## Ranking (exact parameters, `search/rank.ts`)
+
+Search is a chain of small, pure stages (`rank.ts`), composed by `Searcher` (`searcher.ts`) over an immutable in-memory snapshot (`corpus.ts`, rebuilt only when the index revision or model changes):
 
 1. **Parse** the query language. Allow-listed `key:value` operators only, so Windows paths and URLs stay free text.
-2. **Pre-filter** in memory: origin (default human only), trivial acks hidden, repo / branch / cwd / client / source / session / model / date.
-3. **Lexical:** FTS5 `porter unicode61` over the full text. Two lists, `AND` and `OR`, top 300 each.
-4. **Dense:** brute-force cosine. Score per prompt = `0.5·max(chunk) + 0.5·head chunk`. Chunks are 1,434 chars (≈512 tokens) with 15% overlap and at most 12 per prompt; text beyond that is covered by lexical search.
-5. **Weighted RRF, k = 60.** The lexical weight is 0.8 for identifier-like queries (digits, `_./\#-`, camelCase, quotes) or queries of ≤ 3 content tokens, and 0.2 otherwise. The OR list gets 0.4× that weight; dense gets 1.0.
+2. **Filter** (`allowedRows`): origin, trivial acks, repo / branch / cwd / client / source / session / model / date, `-exclusions` (FTS semantics), `"phrases"` (FTS phrase match).
+3. **Lexical** (`lexicalHits`): FTS5 `porter unicode61` over the full text; two lists, `AND` (every term) and `OR`.
+4. **Dense** (`denseHits`): exact cosine over every embedded chunk of the allowed rows. Score per prompt = `0.5·max(chunk) + 0.5·head chunk`. Chunks are 1,434 chars (≈512 tokens) with 15% overlap and at most 12 per prompt; text beyond that is covered by lexical search. Query vectors are cached.
+5. **Fuse** (`fuse`): weighted RRF, k = 60. The lexical weight is 0.8 for identifier-like queries (digits, `_./\#-`, camelCase, quotes) or queries of ≤ 3 content tokens, and 0.2 otherwise. The OR list gets 0.4× that weight; dense gets 1.0.
 6. **Recency:** `× (1 + 0.15 · 2^(−age/30d))`.
-7. **Collapse** identical texts into one hit with `duplicates[]`, cap 3 hits per session, verify `"phrases"` and `-exclusions` on the original text.
+7. **Present:**
+   - **Quick search** (`search`): human prompts only, acks hidden, identical texts collapsed into one hit with `duplicates[]`, at most 3 hits per session with `moreInSession` reporting the rest.
+   - **Explorer** (`explore`): every *matching occurrence* (no collapsing, no cap, all origins), so the client can facet, sort and group exactly. A row matches if it contains every term (`AND`), **or** its similarity is ≥ mean + **2σ** of that query's similarity distribution, **or** it is in the top 20 by fused score. An empty query returns every prompt.
+
+**Explorer match-cutoff calibration** (65 labelled queries on the real index; `npm run bench -w packages/core`):
+
+| Cutoff | Explore recall (normal / hard) | Matches, human (p50 / p90) |
+|---|---|---|
+| z ≥ 3 | 1.00 / 0.74 | 20 / 24 |
+| z ≥ 2.5 | 1.00 / 0.74 | 20 / 32 |
+| **z ≥ 2 (shipped)** | 1.00 / **0.78** | 31 / 79 |
+
+Measured latencies, warm, median: quick search 11 ms, explore 7 ms. Cold: browsing all ~3.2k prompts takes 62 ms; the first semantic query (model load) takes about 0.5 s.
+
+## Fork lineage
+
+Copilot forks copy the parent's events, including their ids, into the new session, and prompt ids are `copilot:<session>:<eventId>`. So lineage is derived from the index itself (`corpus.ts` `withLineage`), with no extra parsing:
+- **Parent:** the earlier-created session sharing the most events; ties go to the nearest ancestor.
+- **Fork point:** the child's last shared prompt.
+
+This finds 27 forked sessions in the current corpus. It needs no re-scan, and it avoids parsing the free-text `session.info` fork notices, which come in several formats and embed prompt-derived titles.
 
 ## Ingestion details
 
@@ -89,14 +111,30 @@ Runtime measurements (proposal 1, Ryzen AI Max+ 395):
 
 ## VS Code integration
 
-- **UI.** A Quick Pick with live debounced search. `sortByLabel = false` is set at runtime (the setter isn't gated by the proposal) plus `alwaysShow`, to keep our ranking. Each item has Copy, Insert into chat (`workbench.action.chat.open {query, isPartialQuery}`), Preview (virtual `awss-prompt:` document) and Open session buttons.
+- **Quick search.** A Quick Pick with live debounced search. `sortByLabel = false` is set at runtime (the setter isn't gated by the proposal) plus `alwaysShow`, to keep our ranking. Each item has Copy, Insert into chat (`workbench.action.chat.open {query, isPartialQuery}`), Preview (virtual `awss-prompt:` document) and Open session buttons. A title button hands the query to the Explorer.
+- **Prompt Explorer.** A read-only **custom editor** on a virtual `prompt-history:` file. In the Agents window, custom editors on a non-untitled resource get the whole editor area with no docked Details panel (`vs/sessions/contrib/layout/browser/desktop/desktopSharedHelpers.ts` `isEditorWithoutDockedDetails`); plain webview panels don't.
+  - **Webview.** Preact, ~70 KB, styled only with theme variables. Strict CSP with no remote content (images and links could leak prompt text). Prompt text is rendered as preformatted text with highlights, never as HTML or Markdown.
+  - **Data flow.** One `explore(query)` call returns every matching occurrence, from a single snapshot. Facets, counts that exclude their own filter, sorting, duplicate hiding and the date histogram are computed client-side (`webview/model.ts`, unit-tested), so filter clicks are instant and can't disagree with each other. Superseded responses are dropped by request id. Full text and session context are fetched on selection. State is restored with `setState`.
+  - **Graph ("constellation").** A per-query radial layout: distance from the centre = 1 − relevance (min–max normalized similarity, or rank for keyword-only results), angular sector = repository, edges = consecutive prompts of one session plus dashed fork → parent links. When the query changes, kept nodes glide, new ones ripple out in rank order, and old ones fade. It honors reduced motion. No global 2D projection (UMAP) is used: its distances don't represent hybrid relevance, it can't place keyword-only or un-embedded rows, and it needs layout caching and relayout rules.
 - **Open session** (`links.ts`, pure data):
   - Agents-window deep link via the agent-host mapping.
   - Best-effort link for recent CLI and autopilot sessions.
   - `copilot --resume <id>` typed, not executed, in a terminal.
   - `vscode-chat-session://local/<b64url(id)>` for chat-panel sessions, from a window on the matching workspace.
-- **Agents window.** **Prompt History: Enable in Agents Window** adds the extension to `extensions.supportAgentsWindow`.
+- **Agents window.** The extension offers once, from a normal window, to add itself to `extensions.supportAgentsWindow`; it can't run in the Agents window before that. The Agents window has no status bar, so the Explorer has its own keybinding (Ctrl+Alt+E). Treated as experimental.
 - **Packaging.** One VSIX per platform (onnxruntime-node is native), about 33 MB for win32-x64, including the model. DirectML and DXC DLLs are pruned because we run on CPU.
+
+## Review log
+
+The Explorer plan was critiqued by three independent reviewers (a neutral reviewer, Claude Opus 5.5 and GPT-6 Astra) before implementation. Changes they drove:
+- Defined the explore match set before building the grid; the quick search's per-session cap and duplicate collapsing are a quick-search policy only.
+- Split search into stages before building the Explorer on top of it.
+- Kept command ids, regrouped settings without removing any, and hid **Search All** from the palette instead of deleting it.
+- Used a custom editor (full area in the Agents window) and added a dedicated keybinding.
+- Dropped UMAP in favour of a per-query graph.
+- Derived fork lineage from shared event ids.
+- Rendered prompts as preformatted text under a strict CSP.
+- Sent all rows to the client instead of server-side paging, and did no IPC versioning (the host ships in the same VSIX).
 
 ## Roadmap
 

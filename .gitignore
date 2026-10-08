@@ -6,3 +6,4 @@ dist/
 coverage/
 .models/
 packages/vscode/models/
+*.local.json

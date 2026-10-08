@@ -14,7 +14,14 @@ const BTN_OPEN: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('link
 
 const ALL_ORIGINS: PromptOrigin[] = ['human', 'agent', 'skill', 'system', 'autopilot'];
 
-export async function showSearchPicker(host: HostClient, opts: { includeAllOrigins?: boolean; initialQuery?: string } = {}): Promise<void> {
+export interface SearchPickerOptions {
+	readonly includeAllOrigins?: boolean;
+	readonly initialQuery?: string;
+	/** Hands the current query over to the full Explorer. */
+	readonly onOpenExplorer?: (query: string) => unknown;
+}
+
+export async function showSearchPicker(host: HostClient, opts: SearchPickerOptions = {}): Promise<void> {
 	const config = vscode.workspace.getConfiguration('awss');
 	const limit = config.get<number>('maxResults', 50);
 	let includeAll = !!opts.includeAllOrigins;
@@ -33,7 +40,9 @@ export async function showSearchPicker(host: HostClient, opts: { includeAllOrigi
 		tooltip: includeAll ? 'Showing all messages (agents, skills, system) — click for only your prompts' : 'Showing only your prompts — click to include agent/skill/system messages',
 	});
 	const btnRefresh: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('refresh'), tooltip: 'Re-scan now' };
-	qp.buttons = [btnScope(), btnRefresh];
+	const btnExplorer: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('table'), tooltip: 'Open in Prompt Explorer (full screen, filters, graph)' };
+	const buttons = () => [btnScope(), ...(opts.onOpenExplorer ? [btnExplorer] : []), btnRefresh];
+	qp.buttons = buttons();
 
 	let seq = 0;
 	let timer: NodeJS.Timeout | undefined;
@@ -74,8 +83,14 @@ export async function showSearchPicker(host: HostClient, opts: { includeAllOrigi
 				vscode.window.setStatusBarMessage('$(sync~spin) Re-scanning prompt history…', 3000);
 				return;
 			}
+			if (b === btnExplorer) {
+				const value = qp.value;
+				qp.hide();
+				void opts.onOpenExplorer?.(value);
+				return;
+			}
 			includeAll = !includeAll;
-			qp.buttons = [btnScope(), btnRefresh];
+			qp.buttons = buttons();
 			schedule(qp.value, 0);
 		}),
 		qp.onDidTriggerItemButton(async e => {
@@ -159,7 +174,8 @@ function toItems(res: SearchResult): HitItem[] {
 		const extras = [
 			hit.duplicates.length ? `×${hit.duplicates.length + 1}` : undefined,
 			hit.prompt.origin !== 'human' ? hit.prompt.origin : undefined,
-		].filter(Boolean).join(' ');
+			hit.moreInSession ? `+${hit.moreInSession} more in this session` : undefined,
+		].filter(Boolean).join(' · ');
 		return {
 			label: `${iconFor(s.client)} ${firstLine}`,
 			description: where,

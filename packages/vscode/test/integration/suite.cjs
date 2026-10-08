@@ -59,6 +59,23 @@ exports.run = async function run() {
 	const doc = await vscode.workspace.openTextDocument(vscode.Uri.from({ scheme: 'awss-prompt', path: '/p.md', query: encodeURIComponent(id) }));
 	assert.ok(doc.getText().includes(res.hits[0].prompt.text.slice(0, 40)), 'preview shows the prompt text');
 
+	// The Explorer opens as a custom editor (full editor area, also in the Agents window).
+	const hold = Number(process.env.AWSS_IT_EXPLORER_HOLD || 0);
+	await vscode.commands.executeCommand('awss.openExplorer', 'design doc for a tree view', 'table');
+	const tab = await waitFor(async () => {
+		const t = vscode.window.tabGroups.activeTabGroup.activeTab;
+		return t && t.input instanceof vscode.TabInputCustom && t.input.viewType === 'awss.explorer' ? t : undefined;
+	}, 15_000, 'Explorer tab');
+	log(`explorer tab: ${tab.label}`);
+	if (hold) {
+		await new Promise(r => setTimeout(r, hold));
+		await vscode.commands.executeCommand('awss.openExplorer', 'design doc for a tree view', 'graph');
+		await new Promise(r => setTimeout(r, hold));
+		await vscode.commands.executeCommand('awss.openExplorer', '', 'table');
+		await new Promise(r => setTimeout(r, hold));
+	}
+	await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+
 	// Changing an index setting restarts the host: in-flight requests must settle (not hang) and the new host must serve.
 	const inflight = api.sync().then(() => 'resolved', () => 'rejected');
 	await vscode.workspace.getConfiguration('awss').update('embedding.threads', 3, vscode.ConfigurationTarget.Global);

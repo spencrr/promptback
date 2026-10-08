@@ -1,4 +1,6 @@
-import type { SessionInfo } from './types.js';
+import type { SessionInfo, SessionOpenTarget } from './types.js';
+
+export type { SessionOpenTarget };
 
 /** `vscode://agents/agent-host-session/copilotcli/<id>[/chat/<chatId>]` (see vscode `platform/agentHost/common/openSessionLink.ts`). */
 export function agentsWindowLink(product: string, agentHostSessionId: string, chatId?: string): string {
@@ -7,19 +9,7 @@ export function agentsWindowLink(product: string, agentHostSessionId: string, ch
 	return chatId ? `${base}/chat/${encodeURIComponent(chatId)}` : base;
 }
 
-export interface SessionOpenTarget {
-	readonly kind: 'agents-window' | 'chat-editor' | 'terminal-resume';
-	readonly label: string;
-	/** URI to open (deep link or chat-session resource). */
-	readonly uri?: string;
-	/** Shell command to resume the session in a terminal. */
-	readonly command?: string;
-	readonly cwd?: string;
-	/** Chat-panel sessions can only be opened from a window on their own workspace. */
-	readonly requiresWorkspace?: string;
-	/** Best-effort targets may fail (e.g. the Agents window only lists external CLI sessions modified in the last 7 days). */
-	readonly bestEffort?: boolean;
-}
+
 
 const EXTERNAL_CLIENTS = new Set(['github/cli', 'github/autopilot']);
 

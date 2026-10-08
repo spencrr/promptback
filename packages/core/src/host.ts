@@ -65,6 +65,11 @@ async function handle(req: HostRequest): Promise<unknown> {
 	switch (req.method) {
 		case 'search':
 			return engine.search(req.params);
+		case 'explore':
+			return engine.explore(req.params);
+		case 'warm':
+			void engine.warm();
+			return undefined;
 		case 'getPrompt':
 			return engine.getPrompt(req.params);
 		case 'getSessionPrompts':

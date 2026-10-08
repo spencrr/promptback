@@ -2,7 +2,7 @@
   "name": "agent-window-semantic-search",
   "displayName": "Prompt History Search",
   "description": "Local semantic search over every prompt you've sent to Copilot agents — Agents window, Copilot CLI, autopilot and VS Code Chat.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "publisher": "spencrr",
   "repository": {
@@ -41,9 +41,15 @@
     "commands": [
       {
         "command": "awss.search",
-        "title": "Search Prompt History",
+        "title": "Quick Search Prompt History",
         "category": "Prompt History",
         "icon": "$(search)"
+      },
+      {
+        "command": "awss.openExplorer",
+        "title": "Open Prompt Explorer",
+        "category": "Prompt History",
+        "icon": "$(table)"
       },
       {
         "command": "awss.searchAll",
@@ -76,146 +82,221 @@
         "command": "awss.search",
         "key": "ctrl+alt+h",
         "mac": "cmd+ctrl+h"
+      },
+      {
+        "command": "awss.openExplorer",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+ctrl+e"
       }
     ],
-    "configuration": {
-      "title": "Prompt History Search",
-      "properties": {
-        "awss.defaultAction": {
-          "type": "string",
-          "enum": [
-            "copy",
-            "insert",
-            "preview",
-            "open"
-          ],
-          "enumDescriptions": [
-            "Copy the prompt to the clipboard",
-            "Insert the prompt into the chat input (without sending)",
-            "Open the full prompt in a read-only editor",
-            "Open or resume the session the prompt came from"
-          ],
-          "default": "copy",
-          "description": "What Enter does on a search result."
-        },
-        "awss.maxResults": {
-          "type": "number",
-          "default": 50,
-          "minimum": 5,
-          "maximum": 500,
-          "description": "Maximum results shown in the search picker."
-        },
-        "awss.embedding.provider": {
-          "type": "string",
-          "enum": [
-            "local",
-            "openai-compatible",
-            "none"
-          ],
-          "enumDescriptions": [
-            "Local ONNX model — prompts never leave this machine",
-            "Any OpenAI-compatible /embeddings endpoint (Azure OpenAI, Foundry, Ollama, LM Studio). Remote endpoints receive your prompt text.",
-            "Keyword search only"
-          ],
-          "default": "local",
-          "markdownDescription": "Embedding backend for semantic search. Changing it re-embeds the index in the background."
-        },
-        "awss.embedding.model": {
-          "type": "string",
-          "enum": [
-            "bge-small-en-v1.5",
-            "all-MiniLM-L6-v2"
-          ],
-          "default": "bge-small-en-v1.5",
-          "markdownDescription": "Local embedding model. `bge-small-en-v1.5` gave the best retrieval quality on real prompt history; `all-MiniLM-L6-v2` is ~2x faster to index."
-        },
-        "awss.embedding.modelDir": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Folder that already contains the model files (for offline machines). Leave empty to use the bundled or cached model."
-        },
-        "awss.embedding.allowDownload": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Allow downloading the pinned, hash-verified model from Hugging Face when it is not bundled or cached. Only model files are downloaded; no prompt text is sent."
-        },
-        "awss.embedding.threads": {
-          "type": "number",
-          "default": 4,
-          "minimum": 1,
-          "maximum": 32,
-          "description": "CPU threads used for local embedding."
-        },
-        "awss.embedding.openai.baseUrl": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Base URL for `openai-compatible`, e.g. `https://<resource>.openai.azure.com/openai/v1` or `http://localhost:11434/v1`."
-        },
-        "awss.embedding.openai.model": {
-          "type": "string",
-          "default": "text-embedding-3-small",
-          "description": "Model/deployment name for the openai-compatible provider."
-        },
-        "awss.embedding.openai.apiKeyEnv": {
-          "type": "string",
-          "default": "",
-          "description": "Name of an environment variable holding the API key (keys are never stored in settings)."
-        },
-        "awss.embedding.openai.dimensions": {
-          "type": "number",
-          "default": 0,
-          "description": "Requested embedding dimensions (0 = model default)."
-        },
-        "awss.index.directory": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Index location. Empty = a per-user cache folder shared by all VS Code windows (including the Agents window), the CLI and the MCP server."
-        },
-        "awss.index.embedOrigins": {
-          "type": "array",
-          "items": {
+    "configuration": [
+      {
+        "id": "general",
+        "title": "General",
+        "order": 1,
+        "properties": {
+          "awss.defaultAction": {
             "type": "string",
             "enum": [
-              "human",
-              "agent",
-              "skill",
-              "system",
-              "autopilot"
-            ]
+              "copy",
+              "insert",
+              "preview",
+              "open"
+            ],
+            "enumDescriptions": [
+              "Copy the prompt to the clipboard",
+              "Insert the prompt into the chat input (without sending)",
+              "Open the full prompt in a read-only editor",
+              "Open or resume the session the prompt came from"
+            ],
+            "default": "copy",
+            "description": "What Enter does on a search result.",
+            "order": 0
           },
-          "default": [
-            "human"
-          ],
-          "description": "Message origins that get semantic embeddings. Others remain keyword-searchable."
-        },
-        "awss.sources.copilotHome": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Copilot home folder (default `$COPILOT_HOME` or `~/.copilot`)."
-        },
-        "awss.sources.copilot": {
-          "type": "boolean",
-          "default": true,
-          "description": "Index Copilot agent sessions (Agents window, Copilot CLI, autopilot)."
-        },
-        "awss.sources.vscodeChat": {
-          "type": "boolean",
-          "default": true,
-          "description": "Index VS Code Chat panel history (Stable and Insiders)."
-        },
-        "awss.sources.retainDeleted": {
-          "type": "boolean",
-          "default": false,
-          "description": "Keep prompts in the index after their session is deleted from disk."
-        },
-        "awss.index.backgroundIntervalMinutes": {
-          "type": "number",
-          "default": 2,
-          "minimum": 0,
-          "description": "How often to pick up new prompts in the background (0 = only when searching)."
+          "awss.maxResults": {
+            "type": "number",
+            "default": 50,
+            "minimum": 5,
+            "maximum": 500,
+            "description": "Maximum results shown in the search picker.",
+            "order": 1
+          }
+        }
+      },
+      {
+        "id": "sources",
+        "title": "Sources",
+        "order": 2,
+        "properties": {
+          "awss.sources.copilot": {
+            "type": "boolean",
+            "default": true,
+            "description": "Index Copilot agent sessions (Agents window, Copilot CLI, autopilot).",
+            "order": 0
+          },
+          "awss.sources.vscodeChat": {
+            "type": "boolean",
+            "default": true,
+            "description": "Index VS Code Chat panel history (Stable and Insiders).",
+            "order": 1
+          },
+          "awss.sources.copilotHome": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "Copilot home folder (default `$COPILOT_HOME` or `~/.copilot`).",
+            "order": 2
+          },
+          "awss.sources.retainDeleted": {
+            "type": "boolean",
+            "default": false,
+            "description": "Keep prompts in the index after their session is deleted from disk.",
+            "order": 3
+          }
+        }
+      },
+      {
+        "id": "embeddings",
+        "title": "Semantic Search",
+        "order": 3,
+        "properties": {
+          "awss.embedding.provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "openai-compatible",
+              "none"
+            ],
+            "enumDescriptions": [
+              "Local ONNX model — prompts never leave this machine",
+              "Any OpenAI-compatible /embeddings endpoint (Azure OpenAI, Foundry, Ollama, LM Studio). Remote endpoints receive your prompt text.",
+              "Keyword search only"
+            ],
+            "default": "local",
+            "markdownDescription": "Embedding backend for semantic search. Changing it re-embeds the index in the background.",
+            "order": 0
+          },
+          "awss.embedding.model": {
+            "type": "string",
+            "enum": [
+              "bge-small-en-v1.5",
+              "all-MiniLM-L6-v2"
+            ],
+            "default": "bge-small-en-v1.5",
+            "markdownDescription": "Local embedding model. `bge-small-en-v1.5` gave the best retrieval quality on real prompt history; `all-MiniLM-L6-v2` is ~2x faster to index.",
+            "order": 1
+          },
+          "awss.embedding.threads": {
+            "type": "number",
+            "default": 4,
+            "minimum": 1,
+            "maximum": 32,
+            "description": "CPU threads used for local embedding.",
+            "order": 2
+          },
+          "awss.embedding.allowDownload": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Allow downloading the pinned, hash-verified model from Hugging Face when it is not bundled or cached. Only model files are downloaded; no prompt text is sent.",
+            "order": 3
+          },
+          "awss.embedding.modelDir": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "Folder that already contains the model files (for offline machines). Leave empty to use the bundled or cached model.",
+            "order": 4
+          },
+          "awss.index.embedOrigins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "human",
+                "agent",
+                "skill",
+                "system",
+                "autopilot"
+              ]
+            },
+            "default": [
+              "human"
+            ],
+            "description": "Message origins that get semantic embeddings. Others remain keyword-searchable.",
+            "order": 5
+          }
+        }
+      },
+      {
+        "id": "remote",
+        "title": "Remote Embeddings (OpenAI-compatible)",
+        "order": 4,
+        "properties": {
+          "awss.embedding.openai.baseUrl": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "Base URL for `openai-compatible`, e.g. `https://<resource>.openai.azure.com/openai/v1` or `http://localhost:11434/v1`.",
+            "order": 0
+          },
+          "awss.embedding.openai.model": {
+            "type": "string",
+            "default": "text-embedding-3-small",
+            "description": "Model/deployment name for the openai-compatible provider.",
+            "order": 1
+          },
+          "awss.embedding.openai.apiKeyEnv": {
+            "type": "string",
+            "default": "",
+            "description": "Name of an environment variable holding the API key (keys are never stored in settings).",
+            "order": 2
+          },
+          "awss.embedding.openai.dimensions": {
+            "type": "number",
+            "default": 0,
+            "description": "Requested embedding dimensions (0 = model default).",
+            "order": 3
+          }
+        }
+      },
+      {
+        "id": "index",
+        "title": "Index",
+        "order": 5,
+        "properties": {
+          "awss.index.backgroundIntervalMinutes": {
+            "type": "number",
+            "default": 2,
+            "minimum": 0,
+            "description": "How often to pick up new prompts in the background (0 = only when searching).",
+            "order": 0
+          },
+          "awss.index.directory": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "Index location. Empty = a per-user cache folder shared by all VS Code windows (including the Agents window), the CLI and the MCP server.",
+            "order": 1
+          }
         }
       }
-    }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "awss.searchAll",
+          "when": "false"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "awss.explorer",
+        "displayName": "Prompt Explorer",
+        "selector": [
+          {
+            "filenamePattern": "*.prompts"
+          }
+        ],
+        "priority": "option"
+      }
+    ]
   },
   "scripts": {
     "build": "node ./scripts/build.mjs",
@@ -224,7 +305,8 @@
     "test:integration": "node ./test/integration/runTest.mjs"
   },
   "dependencies": {
-    "@awss/core": "*"
+    "@awss/core": "*",
+    "preact": "^10.29.8"
   },
   "devDependencies": {
     "@types/vscode": "^1.101.0",

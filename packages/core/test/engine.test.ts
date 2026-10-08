@@ -51,13 +51,13 @@ beforeEach(() => {
 	copilotHome = path.join(tmp, 'copilot');
 	vscodeRoot = path.join(tmp, 'Code');
 	const design = 'Write a design doc for the tree view in CoPyRIT with goals and non-goals';
-	writeSession('sess-a', 'id: sess-a\nrepository: owner/PyRIT\nclient_name: vscode-agent-host\nname: Tree view doc\n', [
+	writeSession('sess-a', 'id: sess-a\nrepository: owner/PyRIT\nclient_name: vscode-agent-host\nname: Tree view doc\ncreated_at: 2026-09-01T09:00:00.000Z\n', [
 		{ type: 'user.message', data: { content: design }, id: 'm1', ts: '2026-09-01T10:00:00.000Z' },
 		{ type: 'user.message', data: { content: 'continue' }, id: 'm2' },
 		{ type: 'user.message', data: { content: 'Summarize the kusto incident query results', source: 'agent-xyz' }, id: 'm3' },
 	]);
 	// A fork copies the same prompt (same event id) into a new session.
-	writeSession('sess-b', 'id: sess-b\nrepository: owner/PyRIT\nclient_name: vscode-agent-host\nname: Tree view doc (fork)\n', [
+	writeSession('sess-b', 'id: sess-b\nrepository: owner/PyRIT\nclient_name: vscode-agent-host\nname: Tree view doc (fork)\ncreated_at: 2026-09-02T09:00:00.000Z\n', [
 		{ type: 'user.message', data: { content: design }, id: 'm1', ts: '2026-09-02T10:00:00.000Z' },
 	]);
 	writeSession('sess-c', 'id: sess-c\ncwd: c:\\src\\other\nclient_name: github/cli\n', [
@@ -201,6 +201,42 @@ describe('PromptSearchEngine', () => {
 		for (const c of chunks) {
 			expect(seen).toContain(c.text);
 		}
+	});
+
+	it('derives fork lineage from shared event ids', async () => {
+		const engine = open();
+		await engine.sync();
+		const fork = (await engine.explore('tree view')).sessions['copilot:sess-b']!;
+		expect(fork.forkOf).toBe('copilot:sess-a');
+		expect(fork.forkPointSeq).toBe(0);
+		expect((await engine.explore('tree view')).sessions['copilot:sess-a']!.forkOf).toBeUndefined();
+	});
+
+	it('explore returns every matching occurrence (no collapsing, no per-session cap, all origins)', async () => {
+		writeSession('sess-many', 'id: sess-many\nrepository: owner/big\n', Array.from({ length: 6 }, (_, i) => ({
+			type: 'user.message', data: { content: `Refactor the parser module step ${i}` }, id: `p${i}`,
+		})));
+		const engine = open(new FakeEmbedder());
+		await engine.sync();
+
+		const quick = await engine.search('refactor parser');
+		expect(quick.hits.filter(h => h.session.key === 'copilot:sess-many')).toHaveLength(3);
+		expect(quick.hits.find(h => h.session.key === 'copilot:sess-many' && h.moreInSession > 0)?.moreInSession).toBe(3);
+
+		const ex = await engine.explore('refactor parser');
+		expect(ex.rows.filter(r => r.sessionKey === 'copilot:sess-many')).toHaveLength(6);
+		expect(ex.rows.every(r => r.matchedLexical || r.matchedSemantic || ex.rows.indexOf(r) < 20)).toBe(true);
+
+		const tree = await engine.explore('design doc tree view');
+		expect(tree.rows.filter(r => /design doc/.test(r.preview))).toHaveLength(2);
+		expect(new Set(tree.rows.filter(r => /design doc/.test(r.preview)).map(r => r.hash)).size).toBe(1);
+
+		const all = await engine.explore('');
+		expect(all.rows).toHaveLength(12);
+		expect(all.rows.map(r => r.origin)).toContain('agent');
+		expect(all.rows.some(r => r.isAck)).toBe(true);
+		expect(all.rows.map(r => r.timestamp)).toEqual([...all.rows.map(r => r.timestamp)].sort((a, b) => b - a));
+		expect(all.revision).toBeTruthy();
 	});
 
 	it('refreshes session metadata in search results when only the title changes', async () => {

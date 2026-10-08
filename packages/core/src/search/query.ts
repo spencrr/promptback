@@ -11,16 +11,12 @@ export interface ParsedQuery {
 	readonly rawTokens: readonly string[];
 	readonly phrases: readonly string[];
 	readonly excluded: readonly string[];
-	readonly filters: ParsedFilters;
+	readonly filters: SearchFilters;
 	readonly mode?: SearchMode;
 	readonly sort: 'relevance' | 'recent';
 }
 
-export interface ParsedFilters extends SearchFilters {
-	readonly branch?: string;
-	readonly model?: string;
-	readonly includeAcks?: boolean;
-}
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 const STOPWORDS = new Set(('a an and are as at be but by can could did do does for from had has have how i if in into is it its me my of on or our '
 	+ 'so that the their them then there these this those to was we were what when where which who why will with would you your about '
@@ -62,7 +58,7 @@ export function parseQuery(raw: string, now = Date.now()): ParsedQuery {
 	const free: string[] = [];
 	const phrases: string[] = [];
 	const excluded: string[] = [];
-	const f: { -readonly [K in keyof ParsedFilters]?: ParsedFilters[K] } = {};
+	const f: Mutable<SearchFilters> = {};
 	let mode: SearchMode | undefined;
 	let sort: 'relevance' | 'recent' = 'relevance';
 
@@ -113,7 +109,7 @@ function unquote(v: string): string {
 }
 
 function applyOperator(
-	f: { -readonly [K in keyof ParsedFilters]?: ParsedFilters[K] },
+	f: Mutable<SearchFilters>,
 	key: string,
 	value: string,
 	now: number,

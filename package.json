@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "npm run build -w packages/core && npm run build -w packages/cli && npm run build -w packages/vscode",
-    "typecheck": "tsc -p packages/core && tsc -p packages/cli && tsc -p packages/vscode",
+    "typecheck": "tsc -p packages/core && tsc -p packages/cli && tsc -p packages/vscode && tsc -p packages/vscode/webview",
     "test": "vitest run",
     "package": "npm run package -w packages/vscode"
   },

@@ -1,336 +1,229 @@
 import type { EmbeddingProvider } from '../embed/provider.js';
-import type { PromptMeta, Store, VectorMatrix } from '../store.js';
-import type { PromptOrigin, SearchHit, SearchMode, SearchQuery, SearchResult, SessionInfo } from '../types.js';
-import { type ParsedFilters, type ParsedQuery, isIdentifierish, parseQuery } from './query.js';
+import type { Store } from '../store.js';
+import type { ExploreResult, ExploreRow, SearchFilters, SearchHit, SearchMode, SearchQuery, SearchResult, SessionInfo } from '../types.js';
+import { ALL_ORIGINS } from '../types.js';
+import type { Corpus, CorpusCache } from './corpus.js';
+import { type ParsedQuery, parseQuery } from './query.js';
+import {
+	DEFAULT_RANKING, type RankingOptions, type Scored, allowedRows, applyRecency, denseHits, excludedRows, fuse,
+	lexicalHits, lexicalRange, similarityStats,
+} from './rank.js';
 
-export interface RankingOptions {
-	/** Reciprocal-rank-fusion constant. */
-	readonly rrfK: number;
-	/** Lexical weight for identifier-like or short (≤ 3 content tokens) queries. */
-	readonly lexWeightHigh: number;
-	/** Lexical weight for longer natural-language queries (dense dominates). */
-	readonly lexWeightLow: number;
-	/** The OR-query list gets this fraction of the lexical weight. */
-	readonly orWeightFactor: number;
-	/** Maximum multiplicative recency boost. */
-	readonly recencyBoost: number;
-	readonly recencyHalfLifeDays: number;
-	/** Weight of the best chunk vs. the head chunk for multi-chunk prompts. */
-	readonly maxChunkWeight: number;
-	readonly maxPerSession: number;
-	readonly candidateLimit: number;
+export { DEFAULT_RANKING, type RankingOptions } from './rank.js';
+
+const PREVIEW_CHARS = 240;
+
+interface Ranked {
+	readonly corpus: Corpus;
+	readonly parsed: ParsedQuery;
+	readonly filters: SearchFilters;
+	readonly mode: SearchMode;
+	readonly semanticUnavailable: boolean;
+	/** Best first. Browse queries (no free text) are newest first with score 0. */
+	readonly scored: Scored[];
+	readonly isBrowse: boolean;
+	/** Explore match threshold on similarity (undefined when dense retrieval didn't run). */
+	readonly semanticCutoff?: number;
 }
 
-/** Parameters benchmarked on the real corpus (see docs/DESIGN.md). */
-export const DEFAULT_RANKING: RankingOptions = {
-	rrfK: 60,
-	lexWeightHigh: 0.8,
-	lexWeightLow: 0.2,
-	orWeightFactor: 0.4,
-	recencyBoost: 0.15,
-	recencyHalfLifeDays: 30,
-	maxChunkWeight: 0.5,
-	maxPerSession: 3,
-	candidateLimit: 300,
-};
-
-const DAY = 86_400_000;
-
-interface Candidate {
-	rowid: number;
-	score: number;
-	lexRank?: number;
-	semRank?: number;
-	range?: [number, number];
-}
-
-/** Holds in-memory caches (prompt metadata, sessions, vectors) and ranks queries against them. */
+/** Ranks queries against the cached corpus. `search` serves the quick picker, `explore` the full Explorer. */
 export class Searcher {
-	private revision: string | undefined;
-	private fingerprint: string | undefined;
-	private meta = new Map<number, PromptMeta>();
-	private sessions = new Map<string, SessionInfo>();
-	private matrix: VectorMatrix | undefined;
+	private readonly queryVectors = new Map<string, Float32Array>();
 
 	constructor(
 		private readonly store: Store,
+		private readonly corpus: CorpusCache,
 		private readonly provider: () => EmbeddingProvider | undefined,
 		private readonly ranking: RankingOptions = DEFAULT_RANKING,
 	) { }
 
-	/** Reloads caches when the index or the active model changed. */
-	refresh(force = false): void {
-		const rev = this.store.getMeta('revision') ?? '0';
-		const p = this.provider();
-		const fp = p?.info.fingerprint;
-		if (!force && rev === this.revision && fp === this.fingerprint) {
-			return;
-		}
-		this.meta = new Map(this.store.listPromptMeta().map(m => [m.rowid, m]));
-		this.sessions = new Map(this.store.listAllSessions().map(s => [s.key, s]));
-		this.matrix = p && p.info.dims ? this.store.loadVectorMatrix(p.info.fingerprint, p.info.dims) : undefined;
-		this.revision = rev;
-		this.fingerprint = fp;
-	}
-
-	get embeddedCount(): number {
-		return this.matrix?.count ?? 0;
-	}
-
+	/** Quick search: top results, identical texts collapsed, at most `maxPerSession` per session. */
 	async search(query: SearchQuery | string, now = Date.now()): Promise<SearchResult> {
 		const t0 = performance.now();
 		const q: SearchQuery = typeof query === 'string' ? { text: query } : query;
-		this.refresh();
-		const parsed = parseQuery(q.text, now);
-		const filters: ParsedFilters = { ...q.filters, ...parsed.filters };
-		const mode: SearchMode = parsed.mode ?? q.mode ?? 'hybrid';
 		const limit = q.limit ?? 50;
-		const allowed = this.allowedRowids(filters);
-		const hasText = parsed.terms.length > 0 || parsed.phrases.length > 0;
-		const provider = this.provider();
-		const denseReady = !!provider && !!this.matrix && this.matrix.count > 0;
-		const wantDense = mode !== 'lexical' && parsed.freeText.length > 0;
-		const semanticUnavailable = wantDense && !denseReady;
+		const r = await this.rank(q.text, q.filters, q.mode, { origins: ['human'], includeAcks: false }, now);
 
-		const cands = new Map<number, Candidate>();
-		const get = (rowid: number) => {
-			let c = cands.get(rowid);
-			if (!c) {
-				c = { rowid, score: 0 };
-				cands.set(rowid, c);
-			}
-			return c;
-		};
-		const k = this.ranking.rrfK;
-
-		if (!hasText && !parsed.freeText) {
-			// Filter-only query: newest first.
-			for (const rowid of allowed) {
-				get(rowid).score = this.meta.get(rowid)!.ts;
-			}
-		} else {
-			const useLex = mode !== 'semantic' || !denseReady;
-			const short = parsed.terms.length <= 3;
-			const wLex = (isIdentifierish(parsed) || short) ? this.ranking.lexWeightHigh : this.ranking.lexWeightLow;
-			if (useLex && hasText) {
-				const lists: [string | undefined, number][] = [
-					[ftsAnd(parsed), wLex],
-					[ftsOr(parsed), wLex * this.ranking.orWeightFactor],
-				];
-				for (const [expr, w] of lists) {
-					if (!expr) {
-						continue;
-					}
-					let rank = 0;
-					for (const r of this.store.searchFts(expr, this.ranking.candidateLimit * 2)) {
-						if (!allowed.has(r.rowid)) {
-							continue;
-						}
-						rank++;
-						const c = get(r.rowid);
-						c.score += w / (k + rank);
-						c.lexRank = Math.min(c.lexRank ?? Infinity, rank);
-						if (rank >= this.ranking.candidateLimit) {
-							break;
-						}
-					}
-				}
-			}
-			if (wantDense && denseReady) {
-				const qv = await provider!.embedQuery(parsed.freeText);
-				const dense = this.denseRank(qv, allowed);
-				dense.forEach((d, i) => {
-					const c = get(d.rowid);
-					c.score += 1 / (k + i + 1);
-					c.semRank = i + 1;
-					c.range = d.range;
-				});
-			}
-			if (parsed.sort === 'recent') {
-				for (const c of cands.values()) {
-					c.score = this.meta.get(c.rowid)!.ts;
-				}
-			} else {
-				const half = this.ranking.recencyHalfLifeDays * DAY;
-				for (const c of cands.values()) {
-					const age = Math.max(0, now - this.meta.get(c.rowid)!.ts);
-					c.score *= 1 + this.ranking.recencyBoost * Math.pow(2, -age / half);
-				}
-			}
-		}
-
-		let ordered = [...cands.values()].sort((a, b) => b.score - a.score || this.meta.get(b.rowid)!.ts - this.meta.get(a.rowid)!.ts);
-
-		// Must-match phrases / excluded terms are verified on the original text (top window only).
-		if (parsed.phrases.length > 0 || parsed.excluded.length > 0) {
-			const window = ordered.slice(0, Math.max(limit * 20, 500));
-			const texts = this.store.getPromptsByRowid(window.map(c => c.rowid));
-			const phrases = parsed.phrases.map(p => p.toLowerCase());
-			const excluded = parsed.excluded.map(p => p.toLowerCase());
-			ordered = window.filter(c => {
-				const text = texts.get(c.rowid)?.text.toLowerCase() ?? '';
-				return phrases.every(p => text.includes(p)) && !excluded.some(x => text.includes(x));
-			});
-		}
-
-		// Collapse identical texts (forks, re-pasted prompts) and cap hits per session.
 		const collapse = q.collapseDuplicates !== false;
-		const byHash = new Map<string, { cand: Candidate; dups: Candidate[] }>();
-		const result: { cand: Candidate; dups: Candidate[] }[] = [];
-		const perSession = new Map<string, number>();
-		const cap = parsed.sort === 'recent' || filters.sessionKey ? Infinity : this.ranking.maxPerSession;
-		for (const c of ordered) {
-			const m = this.meta.get(c.rowid)!;
-			if (collapse) {
-				const g = byHash.get(m.hash);
-				if (g) {
-					g.dups.push(c);
-					continue;
-				}
-			}
-			const n = perSession.get(m.sessionKey) ?? 0;
-			if (n >= cap) {
+		const cap = r.parsed.sort === 'recent' || r.isBrowse || r.filters.sessionKey ? Infinity : this.ranking.maxPerSession;
+		const groups = new Map<string, { head: Scored; dups: Scored[]; more: number }>();
+		const perSession = new Map<string, { shown: number; lastGroup?: { more: number } }>();
+		const picked: { head: Scored; dups: Scored[]; more: number }[] = [];
+		for (const s of r.scored) {
+			const m = r.corpus.meta.get(s.rowid)!;
+			const dupOf = collapse ? groups.get(m.hash) : undefined;
+			if (dupOf) {
+				dupOf.dups.push(s);
 				continue;
 			}
-			perSession.set(m.sessionKey, n + 1);
-			const g = { cand: c, dups: [] as Candidate[] };
-			byHash.set(m.hash, g);
-			if (result.length < limit) {
-				result.push(g);
+			const ps = perSession.get(m.sessionKey) ?? { shown: 0 };
+			perSession.set(m.sessionKey, ps);
+			if (ps.shown >= cap) {
+				if (ps.lastGroup) {
+					ps.lastGroup.more++;
+				}
+				continue;
+			}
+			ps.shown++;
+			const g = { head: s, dups: [] as Scored[], more: 0 };
+			ps.lastGroup = g;
+			groups.set(m.hash, g);
+			if (picked.length < limit) {
+				picked.push(g);
 			}
 		}
 
+		const prompts = this.store.getPromptsByRowid(picked.map(g => g.head.rowid));
 		const hits: SearchHit[] = [];
-		const prompts = this.store.getPromptsByRowid(result.map(r => r.cand.rowid));
-		for (const { cand, dups } of result) {
-			const prompt = prompts.get(cand.rowid);
+		for (const g of picked) {
+			const prompt = prompts.get(g.head.rowid);
 			if (!prompt) {
 				continue;
 			}
-			const session = this.sessions.get(prompt.sessionKey) ?? { key: prompt.sessionKey, source: 'copilot', sessionId: prompt.sessionKey };
 			hits.push({
 				prompt,
-				session,
-				score: cand.score,
-				lexicalRank: cand.lexRank,
-				semanticRank: cand.semRank,
-				matchRange: cand.range && !cand.lexRank ? cand.range : lexicalRange(prompt.text, parsed) ?? cand.range,
-				duplicates: dups.map(d => {
-					const dm = this.meta.get(d.rowid)!;
+				session: r.corpus.sessions.get(prompt.sessionKey) ?? { key: prompt.sessionKey, source: 'copilot', sessionId: prompt.sessionKey },
+				score: g.head.score,
+				lexicalRank: g.head.lexRank,
+				semanticRank: g.head.semRank,
+				matchRange: (g.head.lexRank ? lexicalRange(prompt.text, r.parsed) : undefined) ?? g.head.range,
+				duplicates: g.dups.map(d => {
+					const dm = r.corpus.meta.get(d.rowid)!;
 					return { promptId: dm.id, sessionKey: dm.sessionKey, timestamp: dm.ts };
 				}),
+				moreInSession: g.more,
 			});
 		}
-
 		return {
-			query: q.text,
-			freeText: parsed.freeText,
-			filters,
-			mode,
-			semanticUnavailable,
-			hits,
-			tookMs: Math.round(performance.now() - t0),
+			query: q.text, freeText: r.parsed.freeText, filters: r.filters, mode: r.mode,
+			semanticUnavailable: r.semanticUnavailable, hits, tookMs: Math.round(performance.now() - t0),
 		};
 	}
 
-	private allowedRowids(f: ParsedFilters): Set<number> {
-		const origins = new Set<PromptOrigin>(f.origins ?? ['human']);
-		const lc = (s: string | undefined) => s?.toLowerCase();
-		const repo = lc(f.repo), branch = lc(f.branch), cwd = lc(f.cwd), client = lc(f.client), model = lc(f.model), sess = lc(f.sessionKey);
-		const sessionOk = new Map<string, boolean>();
-		const out = new Set<number>();
-		for (const m of this.meta.values()) {
-			if (!origins.has(m.origin) || (m.isAck && !f.includeAcks)) {
+	/**
+	 * Explorer: every matching occurrence (no per-session cap, no collapsing) so the client can sort, facet and group
+	 * exactly. A row matches if it contains every term, is semantically close (z-score cutoff), or is in the top N.
+	 * An empty query returns every prompt, newest first.
+	 */
+	async explore(text: string, now = Date.now()): Promise<ExploreResult> {
+		const t0 = performance.now();
+		const r = await this.rank(text, undefined, undefined, { origins: ALL_ORIGINS, includeAcks: true }, now);
+		let matched = r.scored;
+		if (!r.isBrowse) {
+			const cutoff = r.semanticCutoff ?? Infinity;
+			matched = r.scored.filter((s, i) => s.inAnd || (s.similarity ?? -Infinity) >= cutoff || i < this.ranking.minMatches);
+		}
+
+		const needText = !r.isBrowse;
+		const texts = needText ? this.store.getPromptsByRowid(matched.map(s => s.rowid)) : undefined;
+		const previews = needText ? undefined : this.store.getPreviews(matched.map(s => s.rowid), PREVIEW_CHARS);
+		const rows: ExploreRow[] = [];
+		const sessions: Record<string, SessionInfo> = {};
+		const cutoff = r.semanticCutoff ?? Infinity;
+		for (const s of matched) {
+			const m = r.corpus.meta.get(s.rowid)!;
+			const full = texts?.get(s.rowid)?.text;
+			const preview = full !== undefined ? full.slice(0, PREVIEW_CHARS) : previews?.get(s.rowid);
+			if (preview === undefined) {
 				continue;
 			}
-			if ((f.after !== undefined && m.ts < f.after) || (f.before !== undefined && m.ts >= f.before)) {
-				continue;
-			}
-			if (model && !lc(m.model)?.includes(model)) {
-				continue;
-			}
-			let ok = sessionOk.get(m.sessionKey);
-			if (ok === undefined) {
-				const s = this.sessions.get(m.sessionKey);
-				ok = !!s
-					&& (!f.source || s.source === f.source)
-					&& (!repo || !!(lc(s.repository) ?? lc(s.cwd))?.includes(repo))
-					&& (!branch || !!lc(s.branch)?.includes(branch))
-					&& (!cwd || !!(lc(s.cwd)?.includes(cwd) || lc(s.workspaceUri)?.includes(cwd)))
-					&& (!client || !!lc(s.client)?.includes(client))
-					&& (!sess || [s.key, s.sessionId, s.agentHostSessionId].some(v => lc(v)?.startsWith(sess) || lc(v) === sess));
-				sessionOk.set(m.sessionKey, ok);
-			}
-			if (ok) {
-				out.add(m.rowid);
+			const range = full !== undefined ? (s.inAnd || s.lexRank ? lexicalRange(full, r.parsed) : undefined) ?? s.range : undefined;
+			rows.push({
+				id: m.id,
+				sessionKey: m.sessionKey,
+				preview,
+				snippet: full !== undefined && range && range[0] > PREVIEW_CHARS - 40 ? excerpt(full, range) : undefined,
+				timestamp: m.ts,
+				origin: m.origin,
+				length: full?.length ?? m.length,
+				hash: m.hash,
+				isAck: m.isAck,
+				model: m.model,
+				seq: m.seq,
+				score: s.score,
+				similarity: s.similarity,
+				matchedLexical: s.inAnd,
+				matchedSemantic: (s.similarity ?? -Infinity) >= cutoff,
+				matchRange: range,
+			});
+			sessions[m.sessionKey] ??= r.corpus.sessions.get(m.sessionKey) ?? { key: m.sessionKey, source: 'copilot', sessionId: m.sessionKey };
+		}
+		return {
+			query: text, freeText: r.parsed.freeText, mode: r.mode, semanticUnavailable: r.semanticUnavailable,
+			revision: r.corpus.revision, rows, sessions, tookMs: Math.round(performance.now() - t0),
+		};
+	}
+
+	/** Shared pipeline: parse → filter → retrieve (lexical, dense) → fuse → recency. */
+	private async rank(
+		text: string,
+		extraFilters: SearchFilters | undefined,
+		requestedMode: SearchMode | undefined,
+		defaults: Parameters<typeof allowedRows>[2],
+		now: number,
+	): Promise<Ranked> {
+		const corpus = this.corpus.get();
+		const parsed = parseQuery(text, now);
+		const filters: SearchFilters = { ...extraFilters, ...parsed.filters };
+		const mode = parsed.mode ?? requestedMode ?? 'hybrid';
+		let allowed = allowedRows(corpus, filters, defaults);
+		const excluded = excludedRows(this.store, parsed);
+		if (excluded.size) {
+			allowed = new Set([...allowed].filter(id => !excluded.has(id)));
+		}
+
+		const provider = this.provider();
+		const denseReady = !!provider && !!corpus.matrix?.count;
+		const wantDense = mode !== 'lexical' && parsed.freeText.length > 0;
+		const hasLexical = parsed.terms.length > 0 || parsed.phrases.length > 0;
+		const base = { corpus, parsed, filters, mode, semanticUnavailable: wantDense && !denseReady };
+
+		if (!hasLexical && !parsed.freeText) {
+			const scored = [...allowed]
+				.sort((a, b) => corpus.meta.get(b)!.ts - corpus.meta.get(a)!.ts)
+				.map(rowid => ({ rowid, score: 0, inAnd: false }));
+			return { ...base, scored, isBrowse: true };
+		}
+
+		if (parsed.phrases.length) {
+			const withPhrases = new Set(lexicalHits(this.store, { ...parsed, terms: [] }).and);
+			allowed = new Set([...allowed].filter(id => withPhrases.has(id)));
+		}
+		const lex = hasLexical && (mode !== 'semantic' || !denseReady) ? lexicalHits(this.store, parsed) : undefined;
+		const dense = wantDense && denseReady ? denseHits(corpus.matrix!, await this.embedQuery(provider!, parsed.freeText), allowed, this.ranking.maxChunkWeight) : undefined;
+		const fused = fuse(parsed, lex, dense, allowed, this.ranking);
+
+		const scored = [...fused.values()];
+		if (parsed.sort === 'recent') {
+			scored.forEach(s => (s.score = corpus.meta.get(s.rowid)!.ts));
+		} else {
+			applyRecency(scored, corpus.meta, this.ranking, now);
+		}
+		scored.sort((a, b) => b.score - a.score || corpus.meta.get(b.rowid)!.ts - corpus.meta.get(a.rowid)!.ts);
+
+		let semanticCutoff: number | undefined;
+		if (dense?.length) {
+			const { mean, std } = similarityStats(dense);
+			semanticCutoff = mean + this.ranking.semanticMatchZ * std;
+		}
+		return { ...base, scored, isBrowse: false, semanticCutoff };
+	}
+
+	private async embedQuery(provider: EmbeddingProvider, text: string): Promise<Float32Array> {
+		const key = `${provider.info.fingerprint}\n${text}`;
+		let v = this.queryVectors.get(key);
+		if (!v) {
+			v = await provider.embedQuery(text);
+			this.queryVectors.set(key, v);
+			if (this.queryVectors.size > 64) {
+				this.queryVectors.delete(this.queryVectors.keys().next().value!);
 			}
 		}
-		return out;
-	}
-
-	private denseRank(qv: Float32Array, allowed: Set<number>): { rowid: number; score: number; range: [number, number] }[] {
-		const m = this.matrix!;
-		const dims = m.dims;
-		const best = new Map<number, { max: number; head?: number; range: [number, number] }>();
-		for (let i = 0; i < m.count; i++) {
-			const rowid = m.promptRowids[i]!;
-			if (!allowed.has(rowid)) {
-				continue;
-			}
-			let dot = 0;
-			const off = i * dims;
-			for (let d = 0; d < dims; d++) {
-				dot += m.vectors[off + d]! * qv[d]!;
-			}
-			let b = best.get(rowid);
-			if (!b) {
-				b = { max: -Infinity, range: [m.starts[i]!, m.ends[i]!] };
-				best.set(rowid, b);
-			}
-			if (dot > b.max) {
-				b.max = dot;
-				b.range = [m.starts[i]!, m.ends[i]!];
-			}
-			if (m.ords[i] === 0) {
-				b.head = dot;
-			}
-		}
-		const w = this.ranking.maxChunkWeight;
-		const scored = [...best.entries()].map(([rowid, b]) => ({
-			rowid,
-			score: b.head === undefined ? b.max : w * b.max + (1 - w) * b.head,
-			range: b.range,
-		}));
-		scored.sort((a, b) => b.score - a.score);
-		return scored.slice(0, this.ranking.candidateLimit);
+		return v;
 	}
 }
 
-function ftsQuote(t: string): string {
-	return `"${t.replace(/"/g, '""')}"`;
-}
-
-function ftsAnd(q: ParsedQuery): string | undefined {
-	const pos = [...q.terms.map(ftsQuote), ...q.phrases.map(ftsQuote)];
-	return pos.length ? pos.join(' AND ') : undefined;
-}
-
-function ftsOr(q: ParsedQuery): string | undefined {
-	if (q.terms.length < 2) {
-		return undefined;
-	}
-	const or = `(${q.terms.map(ftsQuote).join(' OR ')})`;
-	return q.phrases.length ? `${q.phrases.map(ftsQuote).join(' AND ')} AND ${or}` : or;
-}
-
-function lexicalRange(text: string, q: ParsedQuery): [number, number] | undefined {
-	const lower = text.toLowerCase();
-	for (const t of [...q.phrases.map(p => p.toLowerCase()), ...q.terms]) {
-		const re = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u');
-		const m = re.exec(lower);
-		if (m) {
-			return [m.index, m.index + t.length];
-		}
-	}
-	return undefined;
+function excerpt(text: string, [start, end]: readonly [number, number]): string {
+	const from = Math.max(0, start - 80);
+	return `${from > 0 ? '…' : ''}${text.slice(from, Math.max(end, from + 240)).replace(/\s+/g, ' ').trim()}…`;
 }

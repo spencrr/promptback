@@ -7,10 +7,12 @@
   "exports": {
     ".": "./src/index.ts",
     "./host": "./src/host.ts",
-    "./links": "./src/links.ts"
+    "./links": "./src/links.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
-    "build": "tsc -p ."
+    "build": "tsc -p .",
+    "bench": "esbuild bench/eval.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/bench.mjs --external:onnxruntime-node --log-level=warning --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\" && node dist/bench.mjs"
   },
   "dependencies": {
     "@huggingface/tokenizers": "^0.2.0",

@@ -28,6 +28,9 @@ export interface PromptMeta {
 	readonly sessionKey: string;
 	readonly isAck: boolean;
 	readonly model?: string;
+	readonly seq: number;
+	/** Characters. */
+	readonly length: number;
 }
 
 export interface VectorMatrix {
@@ -43,6 +46,10 @@ export interface VectorMatrix {
 export function hashText(text: string): string {
 	return createHash('sha256').update(text).digest('hex').slice(0, 32);
 }
+
+/** Sessions joined with their Agents-window mapping (Copilot sessions only). */
+const SESSION_SELECT = `SELECT s.*, l.agent_host_session_id, l.chat_id AS agent_host_chat_id, l.product AS agent_host_product
+	FROM sessions s LEFT JOIN agent_host_links l ON s.source = 'copilot' AND l.sdk_session_id = s.session_id`;
 
 type Row = Record<string, unknown>;
 
@@ -152,20 +159,11 @@ export class Store {
 		this.stmt('DELETE FROM lease WHERE id = 1 AND owner = ?').run(owner);
 	}
 
-	// ---- files ----------------------------------------------------------------------------------
-
-	getFileState<T>(file: string): T | undefined {
-		const r = this.stmt('SELECT state FROM files WHERE path = ?').get(file) as Row | undefined;
-		return r ? JSON.parse(String(r['state'])) as T : undefined;
-	}
+	// ---- files (per-source read cursors) --------------------------------------------------------
 
 	setFileState(file: string, kind: string, state: unknown): void {
 		this.stmt('INSERT INTO files(path, kind, state) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET state = excluded.state')
 			.run(file, kind, JSON.stringify(state));
-	}
-
-	listFiles(kind: string): string[] {
-		return (this.stmt('SELECT path FROM files WHERE kind = ?').all(kind) as Row[]).map(r => String(r['path']));
 	}
 
 	/** Loads every cursor of one kind in a single query (avoids thousands of point lookups per sync). */
@@ -193,23 +191,6 @@ export class Store {
 		const removed = this.stmt('DELETE FROM prompts WHERE session_key = ?').run(key).changes;
 		this.stmt('DELETE FROM sessions WHERE key = ?').run(key);
 		return Number(removed);
-	}
-
-	getSessions(keys: Iterable<string>): Map<string, SessionInfo> {
-		const out = new Map<string, SessionInfo>();
-		const s = this.stmt(`SELECT s.*, l.agent_host_session_id, l.chat_id AS agent_host_chat_id, l.product AS agent_host_product
-			FROM sessions s LEFT JOIN agent_host_links l ON s.source = 'copilot' AND l.sdk_session_id = s.session_id WHERE s.key = ?`);
-		for (const key of new Set(keys)) {
-			const r = s.get(key) as Row | undefined;
-			if (r) {
-				out.set(key, rowToSession(r));
-			}
-		}
-		return out;
-	}
-
-	listSessionKeys(source: SourceKind): string[] {
-		return (this.stmt('SELECT key FROM sessions WHERE source = ?').all(source) as Row[]).map(r => String(r['key']));
 	}
 
 	replaceAgentHostLinks(links: { sdkSessionId: string; agentHostSessionId: string; product: string; chatId?: string; title?: string }[]): void {
@@ -284,24 +265,41 @@ export class Store {
 		return r ? rowToPrompt(r) : undefined;
 	}
 
+	getSessionPrompts(sessionKey: string): StoredPrompt[] {
+		return (this.stmt('SELECT * FROM prompts WHERE session_key = ? ORDER BY seq').all(sessionKey) as Row[]).map(rowToPrompt);
+	}
+
 	/** All prompt rows with filterable metadata, for in-memory filtering/ranking. */
 	listPromptMeta(): PromptMeta[] {
-		return (this.stmt('SELECT rowid, id, hash, ts, origin, session_key, is_ack, model FROM prompts').all() as Row[]).map(r => ({
+		return (this.stmt('SELECT rowid, id, hash, ts, origin, session_key, is_ack, model, seq, length(text) AS len FROM prompts').all() as Row[]).map(r => ({
 			rowid: Number(r['rowid']), id: String(r['id']), hash: String(r['hash']), ts: Number(r['ts']), origin: r['origin'] as PromptOrigin,
 			sessionKey: String(r['session_key']), isAck: Number(r['is_ack']) === 1, model: opt<string>(r['model']),
+			seq: Number(r['seq']), length: Number(r['len']),
 		}));
 	}
 
-	listAllSessions(): SessionInfo[] {
-		return (this.stmt(`SELECT s.*, l.agent_host_session_id, l.chat_id AS agent_host_chat_id, l.product AS agent_host_product
-			FROM sessions s LEFT JOIN agent_host_links l ON s.source = 'copilot' AND l.sdk_session_id = s.session_id`).all() as Row[]).map(rowToSession);
+	/** First `chars` characters of each prompt (avoids loading 40k-char prompts just to list them). */
+	getPreviews(rowids: Iterable<number>, chars: number): Map<number, string> {
+		const s = this.stmt('SELECT substr(text, 1, ?) AS p FROM prompts WHERE rowid = ?');
+		const out = new Map<number, string>();
+		for (const id of rowids) {
+			const r = s.get(chars, id) as Row | undefined;
+			if (r) {
+				out.set(id, String(r['p']));
+			}
+		}
+		return out;
 	}
 
-	/** BM25 full-text search. Returns rowids best-first with their (negated, higher-is-better) score. */
-	searchFts(match: string, limit: number): { rowid: number; score: number }[] {
+	listAllSessions(): SessionInfo[] {
+		return (this.stmt(`${SESSION_SELECT}`).all() as Row[]).map(rowToSession);
+	}
+
+	/** BM25 full-text search over all prompts. Returns rowids best-first. Malformed expressions yield no hits. */
+	searchFts(match: string): { rowid: number; score: number }[] {
 		try {
-			return (this.stmt('SELECT rowid, -bm25(prompts_fts) AS score FROM prompts_fts WHERE prompts_fts MATCH ? ORDER BY bm25(prompts_fts) LIMIT ?')
-				.all(match, limit) as Row[]).map(r => ({ rowid: Number(r['rowid']), score: Number(r['score']) }));
+			return (this.stmt('SELECT rowid, -bm25(prompts_fts) AS score FROM prompts_fts WHERE prompts_fts MATCH ? ORDER BY bm25(prompts_fts)')
+				.all(match) as Row[]).map(r => ({ rowid: Number(r['rowid']), score: Number(r['score']) }));
 		} catch {
 			return [];
 		}
@@ -363,9 +361,9 @@ export class Store {
 		};
 	}
 
-	/** Removes embeddings no longer referenced by any chunk, or produced by other models. */
-	gcEmbeddings(activeModel: string): number {
-		return Number(this.stmt('DELETE FROM embeddings WHERE model != ? OR hash NOT IN (SELECT hash FROM chunks)').run(activeModel).changes);
+	/** Removes embeddings of this model that no chunk references any more (deleted/edited prompts). Other models' vectors are kept so switching back is free. */
+	gcEmbeddings(model: string): number {
+		return Number(this.stmt('DELETE FROM embeddings WHERE model = ? AND hash NOT IN (SELECT hash FROM chunks)').run(model).changes);
 	}
 
 	// ---- stats ----------------------------------------------------------------------------------
