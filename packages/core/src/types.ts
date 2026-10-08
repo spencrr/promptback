@@ -22,6 +22,10 @@ export interface SessionInfo {
 	readonly title?: string;
 	readonly cwd?: string;
 	readonly repository?: string;
+	/** True when {@link repository} was inferred from file paths the session's tools touched (workspaceless chats). */
+	readonly repositoryInferred?: boolean;
+	/** The session had no folder (e.g. an Agents-window chat started without a workspace). */
+	readonly workspaceless?: boolean;
 	readonly branch?: string;
 	/** Copilot `client_name` (e.g. `vscode-agent-host`, `github/cli`) or `vscode-chat`. */
 	readonly client?: string;
@@ -137,6 +141,20 @@ export interface ExploreRow {
 	readonly matchedLexical: boolean;
 	readonly matchedSemantic: boolean;
 	readonly matchRange?: readonly [start: number, end: number];
+	/** Topic cluster id ({@link ExploreResult.topics}); -1 = small "Other" clusters; undefined = not clustered. */
+	readonly topic?: number;
+}
+
+/** A cluster of similar prompts in an explore result. */
+export interface Topic {
+	readonly id: number;
+	/** The first line of the topic's most central prompt (falls back to its keywords). */
+	readonly label: string;
+	/** Distinctive words, best first. */
+	readonly terms: readonly string[];
+	readonly size: number;
+	/** Index (into the clustered set) of the most central prompt; informational. */
+	readonly representative?: number;
 }
 
 export interface ExploreResult {
@@ -149,20 +167,36 @@ export interface ExploreResult {
 	/** Every matching occurrence (all prompts for an empty query), best first. Facet filtering happens client-side. */
 	readonly rows: readonly ExploreRow[];
 	readonly sessions: Readonly<Record<string, SessionInfo>>;
+	/** Topic clusters among the best results (empty when no embeddings are available). */
+	readonly topics: readonly Topic[];
 	readonly tookMs: number;
 }
 
 export interface IndexStatus {
 	readonly indexPath: string;
+	/** Size of the index database (including its write-ahead log). */
+	readonly indexBytes: number;
 	readonly sessions: number;
 	readonly prompts: number;
 	readonly promptsByOrigin: Readonly<Record<string, number>>;
 	readonly promptsBySource: Readonly<Record<string, number>>;
+	/** Chunks that should have embeddings (for the configured origins). */
 	readonly chunks: number;
 	readonly embeddedChunks: number;
+	readonly pendingChunks: number;
+	readonly embeddingPaused: boolean;
 	readonly model?: string;
+	readonly modelLoaded: boolean;
 	readonly lastSyncAt?: number;
 	readonly errors: readonly string[];
+}
+
+/** A session with its latest prompts, for the sidebar. */
+export interface RecentSession {
+	readonly session: SessionInfo;
+	readonly promptCount: number;
+	readonly lastActivity: number;
+	readonly prompts: readonly { readonly id: string; readonly timestamp: number; readonly preview: string }[];
 }
 
 export interface SyncProgress {

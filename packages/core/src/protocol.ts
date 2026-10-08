@@ -1,5 +1,5 @@
 import type { EngineOptions } from './engine.js';
-import type { ExploreResult, IndexStatus, PromptRecord, SearchQuery, SearchResult, SessionInfo, SyncProgress, SyncResult } from './types.js';
+import type { ExploreResult, IndexStatus, PromptRecord, RecentSession, SearchQuery, SearchResult, SessionInfo, SyncProgress, SyncResult } from './types.js';
 
 /** Serializable subset of {@link EngineOptions} plus host scheduling. */
 export interface HostInitOptions extends Omit<EngineOptions, 'log'> {
@@ -22,6 +22,10 @@ export interface HostMethods {
 	touch(opts: { maxAgeMs: number }): void;
 	/** Starts loading the embedding model in the background. */
 	warm(): void;
+	recentSessions(opts: { limit?: number }): RecentSession[];
+	setEmbeddingPaused(paused: boolean): void;
+	/** Drops this model's vectors and re-embeds in the background. */
+	rebuildEmbeddings(): void;
 }
 
 export type HostRequest = { [M in keyof HostMethods]: { type: 'req'; id: number; method: M; params: Parameters<HostMethods[M]>[0] } }[keyof HostMethods];

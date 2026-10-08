@@ -67,11 +67,23 @@ exports.run = async function run() {
 		return t && t.input instanceof vscode.TabInputCustom && t.input.viewType === 'awss.explorer' ? t : undefined;
 	}, 15_000, 'Explorer tab');
 	log(`explorer tab: ${tab.label}`);
+	assert.equal(tab.label, 'Prompt Explorer', 'tab shows a friendly title, not the virtual file name');
+	assert.equal(tab.input.uri.path, '/Prompt Explorer', 'virtual resource has no extension');
+
+	// Activity-bar views are contributed and populated.
+	await vscode.commands.executeCommand('workbench.view.extension.promptHistory');
+	const sessions = await api.recentSessions?.();
+	if (sessions) {
+		assert.ok(sessions.length > 0, 'recent sessions available for the sidebar');
+	}
 	if (hold) {
+		await vscode.commands.executeCommand('awss.openExplorer', 'design doc for a tree view', 'table');
 		await new Promise(r => setTimeout(r, hold));
 		await vscode.commands.executeCommand('awss.openExplorer', 'design doc for a tree view', 'graph');
 		await new Promise(r => setTimeout(r, hold));
 		await vscode.commands.executeCommand('awss.openExplorer', '', 'table');
+		await new Promise(r => setTimeout(r, hold));
+		await vscode.commands.executeCommand('awss.openIndexPanel');
 		await new Promise(r => setTimeout(r, hold));
 	}
 	await vscode.commands.executeCommand('workbench.action.closeActiveEditor');

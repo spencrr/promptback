@@ -1,3 +1,4 @@
+import * as os from 'node:os';
 import type { EmbeddingProvider } from '../embed/provider.js';
 import type { Store } from '../store.js';
 import type { ExploreResult, ExploreRow, SearchFilters, SearchHit, SearchMode, SearchQuery, SearchResult, SessionInfo } from '../types.js';
@@ -8,10 +9,14 @@ import {
 	DEFAULT_RANKING, type RankingOptions, type Scored, allowedRows, applyRecency, denseHits, excludedRows, fuse,
 	lexicalHits, lexicalRange, similarityStats,
 } from './rank.js';
+import { clusterTopics } from './topics.js';
 
 export { DEFAULT_RANKING, type RankingOptions } from './rank.js';
 
 const PREVIEW_CHARS = 240;
+const TOPIC_CANDIDATES = 150;
+/** Words that appear in many prompts' paths and say nothing about the topic. */
+const USER_WORDS = [os.userInfo().username.toLowerCase()];
 
 interface Ranked {
 	readonly corpus: Corpus;
@@ -148,10 +153,49 @@ export class Searcher {
 			});
 			sessions[m.sessionKey] ??= r.corpus.sessions.get(m.sessionKey) ?? { key: m.sessionKey, source: 'copilot', sessionId: m.sessionKey };
 		}
+		const { topics, topicOf } = this.topicsFor(r, matched, texts);
 		return {
 			query: text, freeText: r.parsed.freeText, mode: r.mode, semanticUnavailable: r.semanticUnavailable,
-			revision: r.corpus.revision, rows, sessions, tookMs: Math.round(performance.now() - t0),
+			revision: r.corpus.revision, rows: rows.map(row => ({ ...row, topic: topicOf.get(row.hash) })), sessions, topics,
+			tookMs: Math.round(performance.now() - t0),
 		};
+	}
+
+	/**
+	 * Clusters the best distinct prompts (your own prompts first) into topics. Rows sharing a text share its topic;
+	 * rows without an embedding or beyond the cap stay unclustered.
+	 */
+	private topicsFor(r: Ranked, matched: readonly Scored[], texts: ReadonlyMap<number, { text: string }> | undefined) {
+		const topicOf = new Map<string, number>();
+		const m = r.corpus.matrix;
+		if (!m?.count) {
+			return { topics: [], topicOf };
+		}
+		const isOwn = (s: Scored) => {
+			const meta = r.corpus.meta.get(s.rowid)!;
+			return meta.origin === 'human' && !meta.isAck;
+		};
+		const picked: Scored[] = [];
+		const hashes = new Set<string>();
+		for (const s of [...matched.filter(isOwn), ...matched.filter(s => !isOwn(s))]) {
+			const hash = r.corpus.meta.get(s.rowid)!.hash;
+			if (picked.length >= TOPIC_CANDIDATES || hashes.has(hash) || !r.corpus.heads.has(s.rowid)) {
+				continue;
+			}
+			hashes.add(hash);
+			picked.push(s);
+		}
+		const full = texts ?? this.store.getPromptsByRowid(picked.map(s => s.rowid));
+		const vectors = picked.map(s => {
+			const i = r.corpus.heads.get(s.rowid)!;
+			return m.vectors.subarray(i * m.dims, (i + 1) * m.dims);
+		});
+		const result = clusterTopics(vectors, picked.map(s => full.get(s.rowid)?.text ?? ''), {
+			exclude: [...r.parsed.terms, ...USER_WORDS],
+			vocabulary: r.corpus.vocabulary(),
+		});
+		picked.forEach((s, i) => topicOf.set(r.corpus.meta.get(s.rowid)!.hash, result.assignment[i]!));
+		return { topics: result.topics, topicOf };
 	}
 
 	/** Shared pipeline: parse → filter → retrieve (lexical, dense) → fuse → recency. */

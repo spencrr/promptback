@@ -1,6 +1,7 @@
 import type { EmbeddingProvider } from '../embed/provider.js';
 import type { PromptMeta, Store, VectorMatrix } from '../store.js';
 import type { SessionInfo } from '../types.js';
+import { type GlobalVocabulary, buildVocabulary } from './topics.js';
 
 /**
  * Immutable in-memory snapshot of everything ranking needs: prompt metadata, sessions (with derived fork lineage)
@@ -8,10 +9,16 @@ import type { SessionInfo } from '../types.js';
  */
 export interface Corpus {
 	readonly revision: string;
+	/** Cache key: model fingerprint and dimensions. */
+	readonly key: string;
 	readonly fingerprint: string | undefined;
 	readonly meta: ReadonlyMap<number, PromptMeta>;
 	readonly sessions: ReadonlyMap<string, SessionInfo>;
 	readonly matrix: VectorMatrix | undefined;
+	/** Row (in {@link matrix}) of each prompt's first chunk, used as the prompt's vector for topic clustering. */
+	readonly heads: ReadonlyMap<number, number>;
+	/** Word document frequencies over every prompt, built on first use (topic labels). */
+	vocabulary(): GlobalVocabulary;
 }
 
 export class CorpusCache {
@@ -21,15 +28,27 @@ export class CorpusCache {
 
 	get(): Corpus {
 		const revision = this.store.getMeta('revision') ?? '0';
+		// Before the model has loaded, use the vectors of the last model that embedded this index (browsing and topics
+		// work immediately; only new query embeddings need the model).
 		const p = this.provider();
-		const fingerprint = p?.info.fingerprint;
-		if (this.current && this.current.revision === revision && this.current.fingerprint === fingerprint) {
+		const fingerprint = p?.info.fingerprint ?? this.store.getMeta('modelFingerprint');
+		const dims = p?.info.dims || Number(this.store.getMeta('modelDims') ?? 0);
+		const key = `${fingerprint}:${dims}`;
+		if (this.current && this.current.revision === revision && this.current.key === key) {
 			return this.current;
 		}
 		const meta = new Map(this.store.listPromptMeta().map(m => [m.rowid, m]));
 		const sessions = withLineage(this.store.listAllSessions(), meta.values());
-		const matrix = p && p.info.dims ? this.store.loadVectorMatrix(p.info.fingerprint, p.info.dims) : undefined;
-		this.current = { revision, fingerprint, meta, sessions, matrix };
+		const matrix = fingerprint && dims ? this.store.loadVectorMatrix(fingerprint, dims) : undefined;
+		const heads = new Map<number, number>();
+		for (let i = 0; i < (matrix?.count ?? 0); i++) {
+			if (matrix!.ords[i] === 0) {
+				heads.set(matrix!.promptRowids[i]!, i);
+			}
+		}
+		let vocab: GlobalVocabulary | undefined;
+		const vocabulary = () => (vocab ??= buildVocabulary(this.store.iterateTexts(4000)));
+		this.current = { revision, key, fingerprint, meta, sessions, matrix, heads, vocabulary };
 		return this.current;
 	}
 }

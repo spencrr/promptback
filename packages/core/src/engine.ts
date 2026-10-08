@@ -12,8 +12,8 @@ import { DEFAULT_RANKING, type RankingOptions, Searcher } from './search/searche
 import { type AgentHostDbState, listAgentHostDbs, readAgentHostDb } from './sources/agentHost.js';
 import { type CopilotFileState, copilotSessionKey, listCopilotSessions, readCopilotEvents, readCopilotSessionInfo } from './sources/copilot.js';
 import { listChatSessionFiles, readChatSession } from './sources/vscodeChat.js';
-import { Store, type StoredPrompt } from './store.js';
-import type { ExploreResult, IndexStatus, PromptOrigin, PromptRecord, SearchQuery, SearchResult, SessionInfo, SyncProgress, SyncResult } from './types.js';
+import { type PromptMeta, Store, type StoredPrompt } from './store.js';
+import type { ExploreResult, IndexStatus, PromptOrigin, PromptRecord, RecentSession, SearchQuery, SearchResult, SessionInfo, SyncProgress, SyncResult } from './types.js';
 
 export interface EngineOptions {
 	/** Directory for `index.db` and downloaded models. Shared by every window/process. */
@@ -65,6 +65,7 @@ export class PromptSearchEngine {
 	private readonly owner = `${os.hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
 	private readonly chunkOpts: ChunkOptions;
 	private lastErrors: string[] = [];
+	private embeddingPaused = false;
 	private syncing: Promise<SyncResult> | undefined;
 	/** Set when session metadata (title, repo, ...) was written, so search caches reload even without prompt changes. */
 	private sessionsChanged = false;
@@ -114,6 +115,7 @@ export class PromptSearchEngine {
 				if (p) {
 					this.store.setMeta('modelFingerprint', p.info.fingerprint);
 					this.store.setMeta('modelName', p.info.displayName);
+					this.store.setMeta('modelDims', String(p.info.dims));
 					this.log(`Loaded embedding model ${p.info.displayName} in ${Date.now() - t} ms`);
 				}
 				return p;
@@ -218,17 +220,18 @@ export class PromptSearchEngine {
 			seen.add(s.eventsPath);
 			try {
 				const prev = eventStates.get(s.eventsPath);
-				const res = readCopilotEvents(s, prev);
+				const res = readCopilotEvents(s, prev, home);
 				const yamlMtime = mtime(s.yamlPath);
 				const prevYaml = yamlStates.get(s.yamlPath);
-				const yamlChanged = yamlMtime !== prevYaml?.mtimeMs;
+				// v2: session metadata now includes derived repositories; re-read every yaml once.
+				const yamlChanged = yamlMtime !== prevYaml?.mtimeMs || (prevYaml as { v?: number } | undefined)?.v !== 2;
 				if (!res && !yamlChanged) {
 					continue;
 				}
 				const hasPrompts = (res?.prompts.length ?? 0) > 0 || (prev?.seq ?? 0) > 0;
 				this.store.transaction(() => {
 					if (hasPrompts && (yamlChanged || res)) {
-						this.store.upsertSession(readCopilotSessionInfo(s, res?.state ?? prev));
+						this.store.upsertSession(readCopilotSessionInfo(s, res?.state ?? prev, home));
 						this.sessionsChanged = true;
 					}
 					if (res) {
@@ -244,7 +247,7 @@ export class PromptSearchEngine {
 							errors.push(`${s.eventsPath}: ${res.oversized} oversized prompt line(s) skipped`);
 						}
 					}
-					this.store.setFileState(s.yamlPath, 'copilot-yaml', { mtimeMs: yamlMtime });
+					this.store.setFileState(s.yamlPath, 'copilot-yaml', { mtimeMs: yamlMtime, v: 2 });
 				});
 			} catch (e) {
 				errors.push(`${s.eventsPath}: ${errMsg(e)}`);
@@ -274,14 +277,14 @@ export class PromptSearchEngine {
 	private async syncVscodeChat(roots: readonly { product: string; root: string }[], chunker: (t: string) => ReturnType<typeof chunkText>, errors: string[]): Promise<[number, number]> {
 		let added = 0, removed = 0;
 		const seen = new Set<string>();
-		const states = this.store.loadFileStates<{ size: number; mtimeMs: number; key: string }>('vscode-chat');
+		const states = this.store.loadFileStates<{ size: number; mtimeMs: number; key: string; v?: number }>('vscode-chat');
 		for (const { product, root } of roots) {
 			for (const file of listChatSessionFiles(product, root)) {
 				seen.add(file.path);
 				try {
 					const st = fs.statSync(file.path);
 					const prev = states.get(file.path);
-					if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) {
+					if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs && prev.v === 2) {
 						continue;
 					}
 					const { session, prompts } = readChatSession(file);
@@ -293,7 +296,7 @@ export class PromptSearchEngine {
 						const [a, r] = this.store.replaceSessionPrompts(session.key, prompts, chunker);
 						added += a;
 						removed += r;
-						this.store.setFileState(file.path, 'vscode-chat', { size: st.size, mtimeMs: st.mtimeMs, key: session.key });
+						this.store.setFileState(file.path, 'vscode-chat', { size: st.size, mtimeMs: st.mtimeMs, key: session.key, v: 2 });
 					});
 				} catch (e) {
 					errors.push(`${file.path}: ${errMsg(e)}`);
@@ -375,7 +378,7 @@ export class PromptSearchEngine {
 		const total = this.store.countPendingChunks(fp, this.embedOrigins);
 		let done = 0;
 		let sinceBump = 0;
-		while (!opts.signal?.aborted && !this.closing.signal.aborted) {
+		while (!opts.signal?.aborted && !this.closing.signal.aborted && !this.embeddingPaused) {
 			const batch = this.store.pendingChunks(fp, this.embedOrigins, EMBED_BATCH);
 			if (batch.length === 0) {
 				break;
@@ -446,19 +449,67 @@ export class PromptSearchEngine {
 		return this.store.getSessionPrompts(sessionKey);
 	}
 
+	/** Most recently active sessions with your own prompts (newest first), for the sidebar. */
+	recentSessions(limit = 50, promptsPerSession = 20): RecentSession[] {
+		const corpus = this.corpus.get();
+		const bySession = new Map<string, PromptMeta[]>();
+		for (const m of corpus.meta.values()) {
+			if (m.origin === 'human' && !m.isAck) {
+				(bySession.get(m.sessionKey) ?? bySession.set(m.sessionKey, []).get(m.sessionKey)!).push(m);
+			}
+		}
+		const recent = [...bySession]
+			.map(([key, list]) => ({ key, list, last: Math.max(...list.map(m => m.ts)) }))
+			.sort((a, b) => b.last - a.last)
+			.slice(0, limit);
+		const previews = this.store.getPreviews(recent.flatMap(r => r.list.map(m => m.rowid)), 160);
+		return recent.map(({ key, list, last }) => ({
+			session: corpus.sessions.get(key) ?? { key, source: 'copilot', sessionId: key },
+			promptCount: list.length,
+			lastActivity: last,
+			prompts: list.sort((a, b) => a.seq - b.seq).slice(-promptsPerSession)
+				.map(m => ({ id: m.id, timestamp: m.ts, preview: previews.get(m.rowid) ?? '' })),
+		}));
+	}
+
+	/** Pauses or resumes background embedding (keyword search keeps working). */
+	setEmbeddingPaused(paused: boolean): void {
+		this.embeddingPaused = paused;
+		this.log(paused ? 'Embedding paused' : 'Embedding resumed');
+	}
+
+	/** Drops this model's vectors so the next sync re-embeds everything (e.g. after changing chunking). */
+	async rebuildEmbeddings(): Promise<void> {
+		await this.syncing?.catch(() => undefined);
+		const fp = this.provider?.info.fingerprint ?? this.store.getMeta('modelFingerprint');
+		if (fp) {
+			this.store.deleteEmbeddings(fp);
+			this.bumpRevision();
+		}
+	}
+
 	status(): IndexStatus {
 		const fp = this.provider?.info.fingerprint ?? this.store.getMeta('modelFingerprint');
 		const c = this.store.counts(fp);
+		const pending = fp ? this.store.countPendingChunks(fp, this.embedOrigins) : c.chunks;
 		const last = this.store.getMeta('lastSyncAt');
+		let indexBytes = 0;
+		for (const suffix of ['', '-wal']) {
+			indexBytes += fs.statSync(this.store.file + suffix, { throwIfNoEntry: false })?.size ?? 0;
+		}
 		return {
 			indexPath: this.store.file,
+			indexBytes,
 			sessions: c.sessions,
 			prompts: c.prompts,
 			promptsByOrigin: c.byOrigin,
 			promptsBySource: c.bySource,
-			chunks: c.chunks,
+			chunks: c.embedded + pending,
 			embeddedChunks: c.embedded,
+			pendingChunks: pending,
+			embeddingPaused: this.embeddingPaused,
 			model: this.provider?.info.displayName ?? this.store.getMeta('modelName'),
+			modelLoaded: !!this.provider,
 			lastSyncAt: last ? Number(last) : undefined,
 			errors: [...(this.providerError ? [this.providerError] : []), ...this.lastErrors],
 		};

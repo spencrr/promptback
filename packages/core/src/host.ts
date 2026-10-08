@@ -83,6 +83,18 @@ async function handle(req: HostRequest): Promise<unknown> {
 				backgroundSync();
 			}
 			return undefined;
+		case 'recentSessions':
+			return engine.recentSessions(req.params.limit);
+		case 'setEmbeddingPaused':
+			engine.setEmbeddingPaused(req.params);
+			if (!req.params) {
+				backgroundSync();
+			}
+			return undefined;
+		case 'rebuildEmbeddings':
+			await engine.rebuildEmbeddings();
+			backgroundSync();
+			return undefined;
 	}
 }
 

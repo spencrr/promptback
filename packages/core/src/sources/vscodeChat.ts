@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { PromptRecord, SessionInfo } from '../types.js';
+import { findGitRoot, repoName } from '../util/git.js';
 import { scanLines } from '../util/lines.js';
 
 export interface ChatSessionFile {
@@ -220,6 +221,8 @@ export function projectChatSession(file: ChatSessionFile, raw: SerializedSession
 			model: req.modelId,
 		});
 	}
+	const cwd = file.workspaceUri ? uriToPath(file.workspaceUri) : undefined;
+	const gitRoot = cwd ? findGitRoot(cwd) : undefined;
 	const session: SessionInfo = {
 		key,
 		source: 'vscode-chat',
@@ -228,7 +231,9 @@ export function projectChatSession(file: ChatSessionFile, raw: SerializedSession
 		client: 'vscode-chat',
 		product: file.product,
 		workspaceUri: file.workspaceUri,
-		cwd: file.workspaceUri ? uriToPath(file.workspaceUri) : undefined,
+		cwd,
+		repository: gitRoot ? repoName(gitRoot) : undefined,
+		workspaceless: !file.workspaceUri || undefined,
 		createdAt: raw.creationDate,
 		updatedAt: raw.lastMessageDate ?? mtimeMs,
 	};

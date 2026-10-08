@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
-import type { EmbeddingConfig, HostInitOptions, IndexStatus, PromptOrigin, SearchQuery, SearchResult, SyncResult } from '@awss/core';
-import { PREVIEW_SCHEME, PromptPreviewProvider } from './actions.js';
+import type { EmbeddingConfig, HostInitOptions, IndexStatus, PromptOrigin, RecentSession, SearchQuery, SearchResult, SyncResult } from '@awss/core';
+import { PREVIEW_SCHEME, PromptPreviewProvider, copyPrompt, openSession } from './actions.js';
 import { ExplorerProvider, openExplorer } from './explorer/explorerProvider.js';
 import { HostClient } from './hostClient.js';
 import { showSearchPicker } from './searchPicker.js';
+import { IndexTreeProvider, type SessionNode, SessionsTreeProvider } from './sidebar.js';
 
 const EXTENSION_ID = 'spencrr.agent-window-semantic-search';
 
@@ -12,6 +13,7 @@ export interface PromptHistoryApi {
 	search(query: SearchQuery | string): Promise<SearchResult>;
 	status(): Promise<IndexStatus & { syncing: boolean }>;
 	sync(): Promise<SyncResult>;
+	recentSessions(): Promise<RecentSession[]>;
 }
 
 export function activate(context: vscode.ExtensionContext): PromptHistoryApi {
@@ -34,6 +36,7 @@ export function activate(context: vscode.ExtensionContext): PromptHistoryApi {
 	const explorer = ExplorerProvider.register(context, host);
 	context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(PREVIEW_SCHEME, new PromptPreviewProvider(host)));
 	registerStatusItem(context, host, log);
+	registerSidebar(context, host, explorer);
 	registerCommands(context, host, log, explorer);
 	void offerAgentsWindow(context);
 
@@ -44,6 +47,7 @@ export function activate(context: vscode.ExtensionContext): PromptHistoryApi {
 		search: async q => (await ready(), host.request('search', typeof q === 'string' ? { text: q } : q)),
 		status: async () => (await ready(), host.request('status', undefined as never)),
 		sync: async () => (await ready(), host.request('sync', { embed: true })),
+		recentSessions: async () => (await ready(), host.request('recentSessions', { limit: 20 })),
 	};
 }
 
@@ -85,16 +89,66 @@ function registerStatusItem(context: vscode.ExtensionContext, host: HostClient, 
 	);
 }
 
+function registerSidebar(context: vscode.ExtensionContext, host: HostClient, explorer: ExplorerProvider): void {
+	const sessions = new SessionsTreeProvider(host);
+	const index = new IndexTreeProvider(host);
+	let lastRefresh = 0;
+	context.subscriptions.push(
+		vscode.window.createTreeView('awss.sessions', { treeDataProvider: sessions, showCollapseAll: true }),
+		vscode.window.createTreeView('awss.index', { treeDataProvider: index }),
+		host.onSynced(r => {
+			if (r.addedPrompts || r.removedPrompts) {
+				sessions.refresh();
+			}
+			index.refresh();
+		}),
+		host.onProgress(p => {
+			// Throttle: embedding reports progress for every batch.
+			if (p.phase !== 'done' && Date.now() - lastRefresh > 2000) {
+				lastRefresh = Date.now();
+				index.refresh(p.message);
+			}
+		}),
+		vscode.commands.registerCommand('awss.refreshSidebar', () => {
+			sessions.refresh();
+			index.refresh();
+		}),
+		vscode.commands.registerCommand('awss.revealPrompt', (node: SessionNode) => {
+			if (node.kind === 'prompt') {
+				return openExplorer(explorer, { query: `session:${node.session.session.sessionId}`, view: 'table', selectId: node.prompt.id });
+			}
+			if (node.kind === 'session') {
+				return openExplorer(explorer, { query: `session:${node.item.session.sessionId}`, view: 'table' });
+			}
+		}),
+		vscode.commands.registerCommand('awss.copyPromptFromTree', async (node: SessionNode) => {
+			if (node.kind === 'prompt') {
+				const r = await host.request('getPrompt', node.prompt.id);
+				if (r) {
+					await copyPrompt(r.prompt);
+				}
+			}
+		}),
+		vscode.commands.registerCommand('awss.openSessionFromTree', (node: SessionNode) => {
+			const s = node.kind === 'session' ? node.item.session : node.kind === 'prompt' ? node.session.session : undefined;
+			return s ? openSession(s) : undefined;
+		}),
+	);
+}
+
 function registerCommands(context: vscode.ExtensionContext, host: HostClient, log: vscode.LogOutputChannel, explorer: ExplorerProvider): void {
 	const command = (id: string, fn: (...args: any[]) => unknown) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
 
 	command('awss.search', (query?: unknown) => showSearchPicker(host, {
 		initialQuery: typeof query === 'string' ? query : undefined,
-		onOpenExplorer: q => openExplorer(explorer, q),
+		onOpenExplorer: q => openExplorer(explorer, { query: q }),
 	}));
-	command('awss.searchAll', () => showSearchPicker(host, { includeAllOrigins: true, onOpenExplorer: q => openExplorer(explorer, q) }));
-	command('awss.openExplorer', (query?: unknown, view?: unknown) =>
-		openExplorer(explorer, typeof query === 'string' ? query : undefined, view === 'graph' || view === 'table' ? view : undefined));
+	command('awss.searchAll', () => showSearchPicker(host, { includeAllOrigins: true, onOpenExplorer: q => openExplorer(explorer, { query: q }) }));
+	command('awss.openExplorer', (query?: unknown, view?: unknown) => openExplorer(explorer, {
+		query: typeof query === 'string' ? query : undefined,
+		view: view === 'graph' || view === 'table' ? view : undefined,
+	}));
+	command('awss.openIndexPanel', () => openExplorer(explorer, { panel: 'index' }));
 	command('awss.reindex', () => vscode.window.withProgress(
 		{ location: vscode.ProgressLocation.Notification, title: 'Prompt History' },
 		async progress => {

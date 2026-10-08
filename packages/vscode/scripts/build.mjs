@@ -1,5 +1,7 @@
 // Bundles the extension (extension host) and the index host process (child process) with esbuild.
 import * as esbuild from 'esbuild';
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import * as path from 'node:path';
 
@@ -43,4 +45,10 @@ if (watch) {
 	}
 } else {
 	await Promise.all(builds.map(b => esbuild.build(b)));
+}
+
+// Codicons for the webview (font + stylesheet), as in the official webview-codicons sample.
+const codicons = path.dirname(createRequire(import.meta.url).resolve('@vscode/codicons/package.json'));
+for (const f of ['codicon.css', 'codicon.ttf']) {
+	fs.copyFileSync(path.join(codicons, 'dist', f), path.join(root, 'dist', f));
 }

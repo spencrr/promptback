@@ -17,9 +17,25 @@ Press **Ctrl+Alt+E** (macOS **Cmd+Ctrl+E**), click **$(history) Prompts** in the
 - **Search bar.** Type words or a description. Results combine keyword and semantic matches; an empty query lists every prompt, newest first. Click **?** for the query syntax.
 - **Filters** (left). Filter by Author (you / agent / skill / system), Source (Agents window, Copilot CLI, autopilot, Chat panel) and Repository. Each count assumes every other filter, so options never disappear. Drag across the **When** histogram to pick a date range.
 - **Table** (center). Click a column header to sort; drag a header edge to resize. A **×N** badge marks prompts sent several times (forks, re-pasted prompts); **Hide duplicates** collapses them. The **Match** column shows why a row matched: **words** means it contains every search word, and the bar shows semantic similarity.
-- **Graph** (center, **G**). The query sits in the middle and results ripple out around it: the closer a dot, the more relevant. Colour = repository; lines join prompts of the same session; dashed lines connect a forked session to its parent. Click a dot to select it, double-click to copy.
-- **Details** (right). The full prompt with matches highlighted, buttons to **Copy**, **Insert into chat**, **Open session** and **Open as document**, and every prompt from the same session (including where a fork branched off).
+- **Graph** (center, **G**). The query sits in the middle and results ripple out around it: the closer a dot, the more relevant.
+  - **Slices (Colour by):** by default each slice is a **topic**, a cluster of prompts with similar meaning named after its most central prompt. You can switch to colouring by repository, source or session.
+  - **Angle within a slice** runs from older to newer, clockwise.
+  - **Lines** join prompts of the same session; dashed lines connect a forked session to its parent.
+  - **Interaction:** click a legend entry to highlight that group, click a dot to select it, and double-click to copy.
+- **Group by** (table). Group rows by day, session, repository or topic.
+- **Index** (toolbar, or **Prompt History: Index & Model Settings**). Shows index status and live progress. Lets you choose the embedding model (local BGE or MiniLM, a remote OpenAI-compatible endpoint, or off), set threads and which messages get embedded, scan now, pause or resume embedding, and rebuild embeddings.
+- **Details** (right). The full prompt with matches highlighted; Copy, Insert into chat, Open session and Document actions; and every prompt from the same session, including where a fork branched off. Rows from the selected prompt's session are tinted in the table.
 - **Keyboard.** `/` focus search · `↑` `↓` move · `Enter` copy · `Ctrl+Enter` insert into chat · `O` open session · `G` toggle graph.
+
+The **Source** pill shows where a prompt was sent (Agents window, Copilot CLI, Autopilot, Chat panel). The **Repository** chip shows one of four things:
+- the session's repository;
+- a repository *inferred* from the files a folder-less chat worked on;
+- a plain folder;
+- **No folder**.
+
+### Sidebar
+
+The **Prompt History** activity-bar view lists recent sessions (Today, Yesterday, This week, Earlier). Expand a session to see its prompts, and click one to show it in the Explorer. The **Index** section summarizes indexing health. The Agents window has no activity bar, so use the keyboard shortcuts there.
 
 ### Quick search
 

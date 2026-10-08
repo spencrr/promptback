@@ -115,7 +115,34 @@ This finds 27 forked sessions in the current corpus. It needs no re-scan, and it
 - **Prompt Explorer.** A read-only **custom editor** on a virtual `prompt-history:` file. In the Agents window, custom editors on a non-untitled resource get the whole editor area with no docked Details panel (`vs/sessions/contrib/layout/browser/desktop/desktopSharedHelpers.ts` `isEditorWithoutDockedDetails`); plain webview panels don't.
   - **Webview.** Preact, ~70 KB, styled only with theme variables. Strict CSP with no remote content (images and links could leak prompt text). Prompt text is rendered as preformatted text with highlights, never as HTML or Markdown.
   - **Data flow.** One `explore(query)` call returns every matching occurrence, from a single snapshot. Facets, counts that exclude their own filter, sorting, duplicate hiding and the date histogram are computed client-side (`webview/model.ts`, unit-tested), so filter clicks are instant and can't disagree with each other. Superseded responses are dropped by request id. Full text and session context are fetched on selection. State is restored with `setState`.
-  - **Graph ("constellation").** A per-query radial layout: distance from the centre = 1 − relevance (min–max normalized similarity, or rank for keyword-only results), angular sector = repository, edges = consecutive prompts of one session plus dashed fork → parent links. When the query changes, kept nodes glide, new ones ripple out in rank order, and old ones fade. It honors reduced motion. No global 2D projection (UMAP) is used: its distances don't represent hybrid relevance, it can't place keyword-only or un-embedded rows, and it needs layout caching and relayout rules.
+  - **Graph ("constellation").** A per-query radial layout:
+    - distance from the centre = 1 − relevance (min–max normalized similarity, or rank for keyword-only results);
+    - one slice of the circle per group: **topic** by default, or repository, source or session;
+    - angle inside a slice = time (older → newer, clockwise);
+    - edges join consecutive prompts of one session, plus dashed fork → parent links.
+
+    When the query changes, kept nodes glide, new ones ripple out in rank order, and old ones fade; reduced motion is honored. No global 2D projection (UMAP) is used: its distances don't represent hybrid relevance, it can't place keyword-only or un-embedded rows, and it needs layout caching and relayout rules.
+
+    An earlier version placed nodes inside a slice in rank order. Since radius also encodes rank, that drew meaningless spiral arms; angle now encodes time instead.
+  - **Topics** (`core/src/search/topics.ts`). Spherical k-means on each prompt's first-chunk embedding:
+    - Seeding is deterministic farthest-first, starting from the best-ranked prompt, so the same query always gives the same topics.
+    - k is 3–8, chosen by the best mean silhouette; clusters smaller than 3 become "Other".
+    - Up to 150 distinct prompts are clustered, your own prompts first.
+    - Each topic is named after its most central prompt (BERTopic's "representative documents"). Its keywords use a class-based TF-IDF variant (cf. c-TF-IDF, Grootendorst 2022, arXiv:2203.05794) weighted by rarity across your whole history.
+    - Average-linkage agglomerative clustering was tried first and rejected: on real data it chained into one giant cluster.
+  - **Colours.** Okabe–Ito colour-blind-safe palette (7 colours), plus grey for "Other". The previous 6-colour palette cycled, so different repositories shared a colour.
+- **Repository labels.** In order:
+  1. the session's recorded repository;
+  2. else the git `origin` (`owner/name`) of its folder, or the folder name if it isn't a git repository;
+  3. for sessions without a repository folder (workspaceless Agents-window chats in `~/.copilot/chats/<id>`, or `~/src`), the git root that dominates the file paths in the session's tool calls (≥ 3 hits and ≥ 50%), shown as *inferred*;
+  4. otherwise **No folder**, never the chat's GUID.
+
+  Tool-call tallies are stored with the incremental read cursor and were backfilled once for existing indexes.
+- **Explorer tab.** `panel.title` and `panel.iconPath` override the file name and icon (`CustomEditorInput.getName` prefers the webview title).
+  - The virtual resource `prompt-history:/Prompt Explorer` has no extension, so VS Code doesn't offer "Configure default editor for '*.x'", which is gated on `extname(resource) !== ''` in `editorResolverService.ts`.
+  - "Reopen With → Text Editor" can't be hidden: the text editor is registered for `*` and extensions can't declare exclusive priority. That view explains what the page is.
+  - Comparable non-file pages in other extensions (GitLens Commit Graph, GitHub PR overview) use plain webview panels. We use a custom editor only because the Agents window gives the full editor area to custom editors, not plain panels.
+- **Sidebar.** An activity-bar container (main window only) with a Recent Sessions tree and an Index view. Per the VS Code UX guidelines, the container holds real views rather than acting as a button that opens an editor.
 - **Open session** (`links.ts`, pure data):
   - Agents-window deep link via the agent-host mapping.
   - Best-effort link for recent CLI and autopilot sessions.

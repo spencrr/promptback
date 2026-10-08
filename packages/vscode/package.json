@@ -2,7 +2,7 @@
   "name": "agent-window-semantic-search",
   "displayName": "Prompt History Search",
   "description": "Local semantic search over every prompt you've sent to Copilot agents — Agents window, Copilot CLI, autopilot and VS Code Chat.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "publisher": "spencrr",
   "repository": {
@@ -52,6 +52,12 @@
         "icon": "$(table)"
       },
       {
+        "command": "awss.openIndexPanel",
+        "title": "Index & Model Settings",
+        "category": "Prompt History",
+        "icon": "$(settings-gear)"
+      },
+      {
         "command": "awss.searchAll",
         "title": "Search Prompt History (Including Agent, Skill and System Messages)",
         "category": "Prompt History"
@@ -59,12 +65,14 @@
       {
         "command": "awss.reindex",
         "title": "Re-scan and Index Now",
-        "category": "Prompt History"
+        "category": "Prompt History",
+        "icon": "$(sync)"
       },
       {
         "command": "awss.showStatus",
         "title": "Show Index Status",
-        "category": "Prompt History"
+        "category": "Prompt History",
+        "icon": "$(info)"
       },
       {
         "command": "awss.showLog",
@@ -75,6 +83,30 @@
         "command": "awss.enableInAgentsWindow",
         "title": "Enable in Agents Window",
         "category": "Prompt History"
+      },
+      {
+        "command": "awss.refreshSidebar",
+        "title": "Refresh",
+        "category": "Prompt History",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "awss.revealPrompt",
+        "title": "Show in Prompt Explorer",
+        "category": "Prompt History",
+        "icon": "$(table)"
+      },
+      {
+        "command": "awss.copyPromptFromTree",
+        "title": "Copy Prompt",
+        "category": "Prompt History",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "awss.openSessionFromTree",
+        "title": "Open Session",
+        "category": "Prompt History",
+        "icon": "$(link-external)"
       }
     ],
     "keybindings": [
@@ -282,6 +314,76 @@
         {
           "command": "awss.searchAll",
           "when": "false"
+        },
+        {
+          "command": "awss.refreshSidebar",
+          "when": "false"
+        },
+        {
+          "command": "awss.revealPrompt",
+          "when": "false"
+        },
+        {
+          "command": "awss.copyPromptFromTree",
+          "when": "false"
+        },
+        {
+          "command": "awss.openSessionFromTree",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "awss.openExplorer",
+          "when": "view == awss.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "awss.search",
+          "when": "view == awss.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "awss.refreshSidebar",
+          "when": "view == awss.sessions",
+          "group": "navigation@3"
+        },
+        {
+          "command": "awss.reindex",
+          "when": "view == awss.index",
+          "group": "navigation@1"
+        },
+        {
+          "command": "awss.showStatus",
+          "when": "view == awss.index",
+          "group": "navigation@2"
+        },
+        {
+          "command": "awss.openIndexPanel",
+          "when": "view == awss.index",
+          "group": "navigation@0"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "awss.copyPromptFromTree",
+          "when": "view == awss.sessions && viewItem == prompt",
+          "group": "inline@1"
+        },
+        {
+          "command": "awss.openSessionFromTree",
+          "when": "view == awss.sessions && viewItem == prompt",
+          "group": "inline@2"
+        },
+        {
+          "command": "awss.revealPrompt",
+          "when": "view == awss.sessions && viewItem == session",
+          "group": "inline@1"
+        },
+        {
+          "command": "awss.openSessionFromTree",
+          "when": "view == awss.sessions && viewItem == session",
+          "group": "inline@2"
         }
       ]
     },
@@ -291,10 +393,41 @@
         "displayName": "Prompt Explorer",
         "selector": [
           {
-            "filenamePattern": "*.prompts"
+            "filenamePattern": "prompt-history:/**"
           }
         ],
-        "priority": "option"
+        "priority": "default"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "promptHistory",
+          "title": "Prompt History",
+          "icon": "$(history)"
+        }
+      ]
+    },
+    "views": {
+      "promptHistory": [
+        {
+          "id": "awss.sessions",
+          "name": "Recent Sessions",
+          "icon": "$(history)",
+          "contextualTitle": "Prompt History"
+        },
+        {
+          "id": "awss.index",
+          "name": "Index",
+          "icon": "$(database)",
+          "visibility": "collapsed"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "awss.sessions",
+        "contents": "No prompts indexed yet. Your Copilot agent and Chat history is scanned in the background.\n[Open Prompt Explorer](command:awss.openExplorer)\n[Scan Now](command:awss.reindex)"
       }
     ]
   },
@@ -306,6 +439,7 @@
   },
   "dependencies": {
     "@awss/core": "*",
+    "@vscode/codicons": "^0.0.46-24",
     "preact": "^10.29.8"
   },
   "devDependencies": {

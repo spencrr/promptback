@@ -1,12 +1,15 @@
 /**
- * Pure client-side data logic for the Explorer: filtering, facet counts, sorting, duplicate hiding and the date
- * histogram. The host returns every matching occurrence once per query; everything here is instant and local.
+ * Pure client-side data logic for the Explorer: filtering, facet counts, sorting, grouping, duplicate hiding, the date
+ * histogram, colours and the graph model. The host returns every matching occurrence once per query; everything here
+ * is instant and local, and unit-tested.
  */
 import type { ExploreResult, ExploreRow, PromptOrigin, SessionInfo } from '@awss/core/types';
 import type { GraphEdge, GraphNode } from './graph.js';
 
 export type FacetKey = 'origin' | 'client' | 'repo';
 export type SortKey = 'relevance' | 'time' | 'length' | 'repo' | 'session';
+export type GroupBy = 'none' | 'day' | 'session' | 'repo' | 'topic';
+export type ColorBy = 'topic' | 'repo' | 'source' | 'session';
 
 export interface ViewState {
 	readonly facets: Readonly<Record<FacetKey, readonly string[]>>;
@@ -15,6 +18,8 @@ export interface ViewState {
 	readonly hideDuplicates: boolean;
 	readonly sort: SortKey;
 	readonly sortDesc: boolean;
+	readonly groupBy: GroupBy;
+	readonly colorBy: ColorBy;
 }
 
 export const DEFAULT_VIEW: ViewState = {
@@ -23,15 +28,25 @@ export const DEFAULT_VIEW: ViewState = {
 	hideDuplicates: true,
 	sort: 'relevance',
 	sortDesc: true,
+	groupBy: 'none',
+	colorBy: 'topic',
 };
 
-export const NO_REPO = '(no repository)';
+export const NO_FOLDER = 'No folder';
 
 export const CLIENT_LABELS: Record<string, string> = {
 	'vscode-agent-host': 'Agents window',
 	'github/cli': 'Copilot CLI',
 	'github/autopilot': 'Autopilot',
 	'vscode-chat': 'Chat panel',
+};
+
+/** Codicon per client, shared with the sidebar. */
+export const CLIENT_ICONS: Record<string, string> = {
+	'vscode-agent-host': 'copilot',
+	'github/cli': 'terminal',
+	'github/autopilot': 'robot',
+	'vscode-chat': 'comment-discussion',
 };
 
 export const ORIGIN_LABELS: Record<PromptOrigin, string> = {
@@ -42,23 +57,33 @@ export const ORIGIN_LABELS: Record<PromptOrigin, string> = {
 	autopilot: 'Autopilot',
 };
 
+/** Okabe–Ito: a colour-blind-safe categorical palette (Okabe & Ito, "Color Universal Design", 2008). */
+export const PALETTE = ['#56B4E9', '#E69F00', '#009E73', '#CC79A7', '#0072B2', '#D55E00', '#F0E442'];
+export const OTHER_COLOR = '#8c8c8c';
+
+export type RepoKind = 'repo' | 'inferred' | 'folder' | 'none';
+
+/** What to show for a session's location: a repository (`owner/name`), an inferred one, a plain folder, or none. */
+export function repoInfo(s: SessionInfo | undefined): { label: string; kind: RepoKind } {
+	if (s?.repository) {
+		return { label: s.repository, kind: s.repositoryInferred ? 'inferred' : 'repo' };
+	}
+	if (s?.cwd && !s.workspaceless) {
+		return { label: s.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? NO_FOLDER, kind: 'folder' };
+	}
+	return { label: NO_FOLDER, kind: 'none' };
+}
+
+export function repoLabel(s: SessionInfo | undefined): string {
+	return repoInfo(s).label;
+}
+
 export function facetValue(key: FacetKey, row: ExploreRow, session: SessionInfo | undefined): string {
 	switch (key) {
 		case 'origin': return row.origin;
 		case 'client': return session?.client ?? 'unknown';
 		case 'repo': return repoLabel(session);
 	}
-}
-
-export function repoLabel(s: SessionInfo | undefined): string {
-	if (s?.repository) {
-		return s.repository;
-	}
-	if (s?.cwd) {
-		const parts = s.cwd.split(/[\\/]/).filter(Boolean);
-		return parts.slice(-1)[0] ?? NO_REPO;
-	}
-	return NO_REPO;
 }
 
 function passes(row: ExploreRow, s: SessionInfo | undefined, v: ViewState, skip?: FacetKey | 'date'): boolean {
@@ -82,9 +107,16 @@ export interface FacetCount {
 	readonly count: number;
 }
 
+/** A row of the table: a prompt, or a group header when grouping is on. */
+export type DisplayItem =
+	| { readonly kind: 'row'; readonly row: ExploreRow }
+	| { readonly kind: 'group'; readonly key: string; readonly label: string; readonly count: number; readonly color?: string };
+
 export interface ViewModel {
 	/** Visible rows in display order. */
 	readonly rows: readonly ExploreRow[];
+	/** Rows interleaved with group headers (same as `rows` when not grouping). */
+	readonly items: readonly DisplayItem[];
 	/** Occurrences per text hash among the filtered rows (for the ×N badge). */
 	readonly dupCounts: ReadonlyMap<string, number>;
 	/** Counts per facet value, computed with every filter except that facet's own (so options never vanish). */
@@ -126,7 +158,8 @@ export function computeView(result: ExploreResult, v: ViewState): ViewModel {
 		const seen = new Set<string>();
 		rows = rows.filter(r => !seen.has(r.hash) && !!seen.add(r.hash));
 	}
-	return { rows, dupCounts, facets, timeline, totalMatches: result.rows.length };
+	const { rows: ordered, items } = group(rows, result, v.groupBy);
+	return { rows: ordered, items, dupCounts, facets, timeline, totalMatches: result.rows.length };
 }
 
 function sortRows(rows: ExploreRow[], result: ExploreResult, v: ViewState): ExploreRow[] {
@@ -144,6 +177,82 @@ function sortRows(rows: ExploreRow[], result: ExploreResult, v: ViewState): Expl
 		return v.sortDesc || browse ? rows : [...rows].reverse();
 	}
 	return [...rows].sort((a, b) => dir * cmp[v.sort](a, b));
+}
+
+/** Groups keep the current sort inside them; groups are ordered by their best (first) row. */
+function group(rows: readonly ExploreRow[], result: ExploreResult, by: GroupBy): { rows: ExploreRow[]; items: DisplayItem[] } {
+	if (by === 'none') {
+		return { rows: [...rows], items: rows.map(row => ({ kind: 'row', row })) };
+	}
+	const groups = new Map<string, { label: string; color?: string; rows: ExploreRow[] }>();
+	const colors = topicColors(result);
+	for (const row of rows) {
+		const [key, label, color] = groupKey(row, result, by, colors);
+		(groups.get(key) ?? groups.set(key, { label, color, rows: [] }).get(key)!).rows.push(row);
+	}
+	const out: DisplayItem[] = [];
+	const ordered: ExploreRow[] = [];
+	for (const [key, g] of groups) {
+		out.push({ kind: 'group', key, label: g.label, count: g.rows.length, color: g.color });
+		for (const row of g.rows) {
+			out.push({ kind: 'row', row });
+			ordered.push(row);
+		}
+	}
+	return { rows: ordered, items: out };
+}
+
+function groupKey(row: ExploreRow, result: ExploreResult, by: GroupBy, topicColor: ReadonlyMap<number, string>): [string, string, string?] {
+	const s = result.sessions[row.sessionKey];
+	switch (by) {
+		case 'day': {
+			const label = dayLabel(row.timestamp);
+			return [label, label];
+		}
+		case 'session':
+			return [row.sessionKey, s?.title ?? 'Untitled session'];
+		case 'repo': {
+			const label = repoLabel(s);
+			return [label, label];
+		}
+		case 'topic': {
+			const t = result.topics.find(x => x.id === row.topic);
+			return t ? [`t${t.id}`, t.label, topicColor.get(t.id)] : ['other', row.topic === -1 ? 'Other topics' : 'Not clustered', OTHER_COLOR];
+		}
+		default:
+			return ['', ''];
+	}
+}
+
+/** "Today", "Yesterday", weekday names for the last week, then "Mar 3, 2026". */
+export function dayLabel(ts: number, now = Date.now()): string {
+	const start = (t: number) => {
+		const d = new Date(t);
+		return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+	};
+	const days = Math.round((start(now) - start(ts)) / 86_400_000);
+	if (days <= 0) {
+		return 'Today';
+	}
+	if (days === 1) {
+		return 'Yesterday';
+	}
+	if (days < 7) {
+		return new Date(ts).toLocaleDateString(undefined, { weekday: 'long' });
+	}
+	return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export function topicColors(result: ExploreResult): Map<number, string> {
+	return new Map(result.topics.map((t, i) => [t.id, PALETTE[i % PALETTE.length]!]));
+}
+
+/** Stable colour assignment for categorical values: most frequent first; beyond the palette everything is "Other". */
+export function categoryColors(values: readonly string[]): Map<string, string> {
+	const counts = new Map<string, number>();
+	values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1));
+	const ordered = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([v]) => v);
+	return new Map(ordered.map((v, i) => [v, i < PALETTE.length ? PALETTE[i]! : OTHER_COLOR]));
 }
 
 export interface Bucket {
@@ -221,11 +330,47 @@ export function relativeTime(ts: number, now = Date.now()): string {
 	return 'just now';
 }
 
-/** Top-N visible rows as graph nodes, plus session-sequence and fork edges between them. */
-export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number): { nodes: GraphNode[]; edges: GraphEdge[] } {
+export interface GraphModel {
+	readonly nodes: GraphNode[];
+	readonly edges: GraphEdge[];
+	/** Groups in angular order, with colours, for the legend and rim labels. */
+	readonly groups: { readonly key: string; readonly label: string; readonly color: string; readonly count: number }[];
+}
+
+/**
+ * The top visible rows as a radial graph:
+ * - distance from the centre = 1 − relevance (min–max normalized similarity, else rank; recency when browsing);
+ * - a slice of the circle per group (topic, repository, source or session) — the colour;
+ * - inside a slice, angle = time (older → newer clockwise), so position carries no fake meaning;
+ * - edges join consecutive prompts of one session, and a fork's first prompt to its parent session (dashed).
+ */
+export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number, colorBy: ColorBy): GraphModel {
 	const rows = vm.rows.slice(0, limit);
 	const sims = rows.map(r => r.similarity).filter((x): x is number => x !== undefined);
 	const lo = Math.min(...sims), hi = Math.max(...sims);
+	const topicColor = topicColors(result);
+	const keyOf = (r: ExploreRow): [string, string] => {
+		const s = result.sessions[r.sessionKey];
+		switch (colorBy) {
+			case 'topic': {
+				const t = result.topics.find(x => x.id === r.topic);
+				return t ? [`t${t.id}`, t.label] : ['other', r.topic === -1 ? 'Other topics' : 'Not clustered'];
+			}
+			case 'repo': return [repoLabel(s), repoLabel(s)];
+			case 'source': return [s?.client ?? 'unknown', CLIENT_LABELS[s?.client ?? ''] ?? s?.client ?? 'unknown'];
+			case 'session': return [r.sessionKey, s?.title ?? 'Untitled session'];
+		}
+	};
+	const keys = rows.map(keyOf);
+	const colors = colorBy === 'topic'
+		? new Map(result.topics.map(t => [`t${t.id}`, topicColor.get(t.id)!]))
+		: categoryColors(keys.map(([k]) => k));
+	const colorFor = (k: string) => colors.get(k) ?? OTHER_COLOR;
+	// Categories beyond the palette share one grey "Other" slice.
+	const effective = keys.map(([k, label]): [string, string] => (colorBy !== 'topic' && colorFor(k) === OTHER_COLOR ? ['other', 'Other'] : [k, label]));
+
+	const times = rows.map(r => r.timestamp);
+	const t0 = Math.min(...times), t1 = Math.max(...times);
 	const nodes: GraphNode[] = rows.map((r, i) => {
 		let relevance: number;
 		if (!result.freeText) {
@@ -235,16 +380,28 @@ export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number):
 		} else {
 			relevance = 1 - i / Math.max(1, rows.length);
 		}
+		const [group] = effective[i]!;
 		return {
 			id: r.id,
 			label: r.preview.trim().split(/\r?\n/, 1)[0] ?? '',
-			group: repoLabel(result.sessions[r.sessionKey]),
+			group,
+			color: group === 'other' ? OTHER_COLOR : colorFor(group),
 			sessionKey: r.sessionKey,
 			seq: r.seq,
 			relevance: Math.max(0, Math.min(1, relevance)),
+			order: t1 > t0 ? (r.timestamp - t0) / (t1 - t0) : 0.5,
 			rank: i,
 		};
 	});
+
+	const groupStats = new Map<string, { label: string; color: string; count: number; best: number }>();
+	effective.forEach(([key, label], i) => {
+		const g = groupStats.get(key) ?? { label, color: nodes[i]!.color, count: 0, best: i };
+		g.count++;
+		groupStats.set(key, g);
+	});
+	const groups = [...groupStats].sort((a, b) => a[1].best - b[1].best).map(([key, g]) => ({ key, label: g.label, color: g.color, count: g.count }));
+
 	const bySession = new Map<string, GraphNode[]>();
 	nodes.forEach(n => (bySession.get(n.sessionKey) ?? bySession.set(n.sessionKey, []).get(n.sessionKey)!).push(n));
 	const edges: GraphEdge[] = [];
@@ -261,5 +418,5 @@ export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number):
 			edges.push({ from: parent[parent.length - 1]!.id, to: list[0]!.id, kind: 'fork' });
 		}
 	}
-	return { nodes, edges };
+	return { nodes, edges, groups };
 }

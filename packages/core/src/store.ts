@@ -102,6 +102,19 @@ export class Store {
 		if (!v) {
 			this.setMeta('schemaVersion', String(SCHEMA_VERSION));
 		}
+		// Additive column migrations only: the index file is shared by every VS Code build, the CLI and the MCP server.
+		// Under the write lock so two processes upgrading at once don't both try to add a column.
+		this.transaction(() => {
+			this.addColumn('sessions', 'repo_inferred', 'INTEGER');
+			this.addColumn('sessions', 'workspaceless', 'INTEGER');
+		});
+	}
+
+	private addColumn(table: string, column: string, type: string): void {
+		const cols = (this.db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map(r => String(r['name']));
+		if (!cols.includes(column)) {
+			this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+		}
 	}
 
 	private stmt(sql: string): StatementSync {
@@ -179,12 +192,14 @@ export class Store {
 	// ---- sessions -------------------------------------------------------------------------------
 
 	upsertSession(s: SessionInfo): void {
-		this.stmt(`INSERT INTO sessions(key, source, session_id, title, cwd, repository, branch, client, product, workspace_uri, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		this.stmt(`INSERT INTO sessions(key, source, session_id, title, cwd, repository, branch, client, product, workspace_uri, created_at, updated_at, repo_inferred, workspaceless)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET title = excluded.title, cwd = excluded.cwd, repository = excluded.repository, branch = excluded.branch,
 				client = excluded.client, product = excluded.product, workspace_uri = excluded.workspace_uri,
-				created_at = excluded.created_at, updated_at = excluded.updated_at`)
-			.run(s.key, s.source, s.sessionId, n(s.title), n(s.cwd), n(s.repository), n(s.branch), n(s.client), n(s.product), n(s.workspaceUri), n(s.createdAt), n(s.updatedAt));
+				created_at = excluded.created_at, updated_at = excluded.updated_at,
+				repo_inferred = excluded.repo_inferred, workspaceless = excluded.workspaceless`)
+			.run(s.key, s.source, s.sessionId, n(s.title), n(s.cwd), n(s.repository), n(s.branch), n(s.client), n(s.product), n(s.workspaceUri),
+				n(s.createdAt), n(s.updatedAt), s.repositoryInferred ? 1 : 0, s.workspaceless ? 1 : 0);
 	}
 
 	deleteSession(key: string): number {
@@ -278,6 +293,13 @@ export class Store {
 		}));
 	}
 
+	/** First `chars` characters of every prompt, streamed. */
+	*iterateTexts(chars: number): Generator<string> {
+		for (const r of this.db.prepare('SELECT substr(text, 1, ?) AS t FROM prompts').iterate(chars) as Iterable<Row>) {
+			yield String(r['t']);
+		}
+	}
+
 	/** First `chars` characters of each prompt (avoids loading 40k-char prompts just to list them). */
 	getPreviews(rowids: Iterable<number>, chars: number): Map<number, string> {
 		const s = this.stmt('SELECT substr(text, 1, ?) AS p FROM prompts WHERE rowid = ?');
@@ -366,6 +388,10 @@ export class Store {
 		return Number(this.stmt('DELETE FROM embeddings WHERE model = ? AND hash NOT IN (SELECT hash FROM chunks)').run(model).changes);
 	}
 
+	deleteEmbeddings(model: string): number {
+		return Number(this.stmt('DELETE FROM embeddings WHERE model = ?').run(model).changes);
+	}
+
 	// ---- stats ----------------------------------------------------------------------------------
 
 	counts(model: string | undefined): { sessions: number; prompts: number; chunks: number; embedded: number; byOrigin: Record<string, number>; bySource: Record<string, number> } {
@@ -434,6 +460,8 @@ function rowToSession(r: Row): SessionInfo {
 		title: opt<string>(r['title']),
 		cwd: opt<string>(r['cwd']),
 		repository: opt<string>(r['repository']),
+		repositoryInferred: Number(r['repo_inferred']) === 1 || undefined,
+		workspaceless: Number(r['workspaceless']) === 1 || undefined,
 		branch: opt<string>(r['branch']),
 		client: opt<string>(r['client']),
 		product: opt<string>(r['product']) ?? opt<string>(r['agent_host_product']),

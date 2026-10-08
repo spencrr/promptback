@@ -1,8 +1,10 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
 import type { PromptOrigin, PromptRecord, SessionInfo } from '../types.js';
+import { findGitRoot, gitRootsInText, repoName } from '../util/git.js';
 import { scanLines } from '../util/lines.js';
 
 /** Persisted incremental-read state for one `events.jsonl`. */
@@ -18,6 +20,10 @@ export interface CopilotFileState {
 	readonly model?: string;
 	readonly startTime?: number;
 	readonly cwd?: string;
+	/** Workspaceless sessions only: how often each git root appeared in tool-call paths (for repo inference). */
+	readonly repoHits?: Readonly<Record<string, number>>;
+	/** Set once tool calls up to `cursor` have been scanned for repo inference (backfills older indexes). */
+	readonly repoScanned?: boolean;
 }
 
 export interface CopilotSessionDir {
@@ -95,8 +101,10 @@ const WANTED = ['"type":"user.message"', '"type":"session.start"', '"type":"sess
 
 /**
  * Incrementally reads new `user.message` events. Returns `undefined` when the file is unchanged.
+ * For workspaceless sessions (cwd under `<copilotHome>/chats`), tool-call paths are also tallied by git root so the
+ * session's repository can be inferred.
  */
-export function readCopilotEvents(session: CopilotSessionDir, prev: CopilotFileState | undefined): CopilotReadResult | undefined {
+export function readCopilotEvents(session: CopilotSessionDir, prev: CopilotFileState | undefined, copilotHome?: string): CopilotReadResult | undefined {
 	let st: fs.Stats | undefined;
 	try {
 		st = fs.statSync(session.eventsPath, { throwIfNoEntry: false });
@@ -106,7 +114,8 @@ export function readCopilotEvents(session: CopilotSessionDir, prev: CopilotFileS
 	if (!st) {
 		return undefined;
 	}
-	if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) {
+	const needsRepoBackfill = !!prev && !prev.repoScanned && !!copilotHome && needsRepoInference(prev.cwd, copilotHome);
+	if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs && !needsRepoBackfill) {
 		return undefined;
 	}
 	const prevHeadLen = prev?.headLen ?? 0;
@@ -123,11 +132,29 @@ export function readCopilotEvents(session: CopilotSessionDir, prev: CopilotFileS
 	let badLines = 0;
 	const prompts: PromptRecord[] = [];
 	const sessionKey = copilotSessionKey(session.sessionId);
+	const repoHits: Record<string, number> = { ...base.repoHits };
+	const tallyTools = () => !!copilotHome && needsRepoInference(cwd, copilotHome);
+	const tally = (data: Record<string, unknown>) => tallyToolCall(data, repoHits, copilotHome!);
+
+	if (needsRepoBackfill && !reset) {
+		scanLines(session.eventsPath, {
+			start: 0,
+			end: base.cursor,
+			wantLine: head => head.includes(TOOL_START),
+			onLine: line => {
+				try {
+					tally((JSON.parse(line.toString('utf8')) as { data?: Record<string, unknown> }).data ?? {});
+				} catch {
+					// ignore
+				}
+			},
+		});
+	}
 
 	const { endOffset, oversized } = scanLines(session.eventsPath, {
 		start: base.cursor,
 		end: st.size,
-		wantLine: head => WANTED.some(w => head.includes(w)),
+		wantLine: head => WANTED.some(w => head.includes(w)) || (head.includes(TOOL_START) && tallyTools()),
 		onLine: (line, offset) => {
 			let e: { type?: string; id?: string; timestamp?: string; data?: Record<string, unknown> };
 			try {
@@ -138,6 +165,9 @@ export function readCopilotEvents(session: CopilotSessionDir, prev: CopilotFileS
 			}
 			const data = e.data ?? {};
 			switch (e.type) {
+				case 'tool.execution_start':
+					tally(data);
+					break;
 				case 'session.start': {
 					if (typeof data['selectedModel'] === 'string') {
 						model = data['selectedModel'];
@@ -181,12 +211,63 @@ export function readCopilotEvents(session: CopilotSessionDir, prev: CopilotFileS
 	const headLen = Math.min(HEAD_HASH_BYTES, endOffset);
 	const hh = headLen === base.headLen ? base.headHash : headHash(session.eventsPath, headLen);
 	return {
-		state: { size: st.size, mtimeMs: st.mtimeMs, cursor: endOffset, headHash: hh, headLen, seq, model, startTime, cwd },
+		state: {
+			size: st.size, mtimeMs: st.mtimeMs, cursor: endOffset, headHash: hh, headLen, seq, model, startTime, cwd,
+			repoHits: Object.keys(repoHits).length ? repoHits : undefined,
+			repoScanned: true,
+		},
 		reset,
 		prompts,
 		oversized,
 		badLines,
 	};
+}
+
+const TOOL_START = '"type":"tool.execution_start"';
+const PATH_ARGS = ['path', 'paths', 'command', 'cwd', 'file', 'filePath', 'directory'];
+
+function tallyToolCall(data: Record<string, unknown>, hits: Record<string, number>, copilotHome: string): void {
+	const args = data['arguments'];
+	if (!args || typeof args !== 'object') {
+		return;
+	}
+	const home = os.homedir();
+	const ignore = (p: string) => p.toLowerCase().startsWith(copilotHome.toLowerCase());
+	for (const key of PATH_ARGS) {
+		const v = (args as Record<string, unknown>)[key];
+		for (const s of Array.isArray(v) ? v : [v]) {
+			if (typeof s === 'string' && s.length < 20_000) {
+				for (const root of gitRootsInText(s, home, ignore)) {
+					hits[root] = (hits[root] ?? 0) + 1;
+				}
+			}
+		}
+	}
+}
+
+/** Repo inference applies when the session folder isn't inside a git repository (workspaceless chats, `~/src`, ...). */
+function needsRepoInference(cwd: string | undefined, copilotHome: string): boolean {
+	return !!cwd && (isWorkspaceless(cwd, copilotHome) || !findGitRoot(cwd));
+}
+
+/** Sessions started without a folder live in `<copilotHome>/chats/<id>` (e.g. Agents-window chats). */
+export function isWorkspaceless(cwd: string | undefined, copilotHome: string): boolean {
+	if (!cwd) {
+		return false;
+	}
+	const rel = path.relative(path.join(copilotHome, 'chats'), cwd);
+	return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+/** The git root referenced by most tool calls, if it clearly dominates (≥ 3 hits and ≥ 50% of all hits). */
+export function dominantRoot(hits: Readonly<Record<string, number>> | undefined): string | undefined {
+	if (!hits) {
+		return undefined;
+	}
+	const entries = Object.entries(hits).sort((a, b) => b[1] - a[1]);
+	const total = entries.reduce((n, [, c]) => n + c, 0);
+	const [root, count] = entries[0] ?? [];
+	return root && count! >= 3 && count! / total >= 0.5 ? root : undefined;
 }
 
 interface WorkspaceYaml {
@@ -202,7 +283,11 @@ interface WorkspaceYaml {
 	updated_at?: string;
 }
 
-export function readCopilotSessionInfo(session: CopilotSessionDir, fileState?: CopilotFileState): SessionInfo {
+/**
+ * Session metadata from `workspace.yaml`. Repository: the recorded one, else the git `origin` of the session folder,
+ * else (workspaceless chats) the git root that dominates the session's tool calls, flagged as inferred.
+ */
+export function readCopilotSessionInfo(session: CopilotSessionDir, fileState?: CopilotFileState, copilotHome?: string): SessionInfo {
 	let y: WorkspaceYaml = {};
 	try {
 		const parsed = parseYaml(fs.readFileSync(session.yamlPath, 'utf8'));
@@ -214,13 +299,30 @@ export function readCopilotSessionInfo(session: CopilotSessionDir, fileState?: C
 	}
 	const created = Date.parse(y.created_at ?? '');
 	const updated = Date.parse(y.updated_at ?? '');
+	const cwd = str(y.cwd) ?? fileState?.cwd;
+	const workspaceless = !!copilotHome && isWorkspaceless(cwd, copilotHome);
+	let repository = str(y.repository);
+	let repositoryInferred = false;
+	if (!repository) {
+		const dir = str(y.git_root) ?? cwd;
+		const root = workspaceless || !dir ? undefined : findGitRoot(dir);
+		if (root) {
+			repository = repoName(root);
+		} else {
+			const inferred = dominantRoot(fileState?.repoHits);
+			repository = inferred ? repoName(inferred) : undefined;
+			repositoryInferred = !!inferred;
+		}
+	}
 	return {
 		key: copilotSessionKey(session.sessionId),
 		source: 'copilot',
 		sessionId: session.sessionId,
 		title: str(y.name) ?? str(y.summary),
-		cwd: str(y.cwd) ?? fileState?.cwd,
-		repository: str(y.repository),
+		cwd,
+		repository,
+		repositoryInferred: repositoryInferred || undefined,
+		workspaceless: workspaceless || undefined,
 		branch: str(y.branch),
 		client: str(y.client_name),
 		createdAt: Number.isNaN(created) ? fileState?.startTime : created,

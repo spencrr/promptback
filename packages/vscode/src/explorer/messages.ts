@@ -1,13 +1,34 @@
-import type { ExploreResult, PromptRecord, SessionInfo } from '@awss/core/types';
-import type { SessionOpenTarget } from '@awss/core/types';
+import type { ExploreResult, IndexStatus, PromptRecord, SessionInfo, SessionOpenTarget, SyncProgress } from '@awss/core/types';
 
 export type ExplorerView = 'table' | 'graph';
 
 /** Actions on a prompt (all handled by the extension so they work identically to the quick picker). */
 export type PromptAction = 'copy' | 'insert' | 'preview' | 'open';
 
+/** Settings the Index panel can change (keys under `awss.`). */
+export interface IndexSettings {
+	readonly provider: 'local' | 'openai-compatible' | 'none';
+	readonly model: string;
+	readonly threads: number;
+	readonly embedOrigins: readonly string[];
+	readonly allowDownload: boolean;
+	readonly openaiBaseUrl: string;
+	readonly openaiModel: string;
+	readonly backgroundIntervalMinutes: number;
+}
+
+export type IndexAction = 'reindex' | 'pause' | 'resume' | 'rebuild' | 'openSettings' | 'showLog' | 'revealIndex';
+
+/** Where to open: query text, view, optionally a prompt to select once results arrive, and a panel to show. */
+export interface OpenRequest {
+	readonly query: string;
+	readonly view?: ExplorerView;
+	readonly selectId?: string;
+	readonly panel?: 'index';
+}
+
 export type ToWebview =
-	| { readonly type: 'init'; readonly query: string; readonly reducedMotion: boolean; readonly view?: ExplorerView }
+	| ({ readonly type: 'init'; readonly reducedMotion: boolean } & Partial<OpenRequest>)
 	| { readonly type: 'result'; readonly requestId: number; readonly result: ExploreResult }
 	| { readonly type: 'error'; readonly requestId: number; readonly message: string }
 	| {
@@ -19,12 +40,17 @@ export type ToWebview =
 		readonly sessionPrompts: readonly Pick<PromptRecord, 'id' | 'seq' | 'timestamp' | 'origin' | 'text'>[];
 		readonly openTargets: readonly SessionOpenTarget[];
 	}
-	/** The index changed (new prompts / embeddings); the webview re-runs its query if it is idle. */
+	/** The index changed (new prompts / embeddings); the webview re-runs its query in place. */
 	| { readonly type: 'indexChanged' }
-	| { readonly type: 'setQuery'; readonly query: string; readonly view?: ExplorerView };
+	| ({ readonly type: 'open' } & OpenRequest)
+	| { readonly type: 'indexStatus'; readonly status?: IndexStatus & { syncing: boolean }; readonly settings: IndexSettings; readonly error?: string }
+	| { readonly type: 'progress'; readonly progress: SyncProgress };
 
 export type FromWebview =
 	| { readonly type: 'ready' }
 	| { readonly type: 'query'; readonly requestId: number; readonly text: string }
 	| { readonly type: 'detail'; readonly requestId: number; readonly promptId: string }
-	| { readonly type: 'action'; readonly action: PromptAction; readonly promptId: string };
+	| { readonly type: 'action'; readonly action: PromptAction; readonly promptId: string }
+	| { readonly type: 'indexStatus' }
+	| { readonly type: 'setSetting'; readonly key: keyof IndexSettings; readonly value: unknown }
+	| { readonly type: 'indexAction'; readonly action: IndexAction };
