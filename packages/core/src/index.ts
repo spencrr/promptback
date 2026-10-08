@@ -1,0 +1,13 @@
+export * from './types.js';
+export { PromptSearchEngine, type EngineOptions, type SyncOptions } from './engine.js';
+export type { EmbeddingConfig, EmbeddingProvider, EmbeddingProviderInfo } from './embed/provider.js';
+export { LOCAL_MODELS, DEFAULT_LOCAL_MODEL, getModelSpec, type LocalModelSpec } from './embed/models.js';
+export { downloadModel, resolveModelDir } from './embed/modelStore.js';
+export { parseQuery, parseDateRange, type ParsedQuery } from './search/query.js';
+export { DEFAULT_RANKING, type RankingOptions } from './search/searcher.js';
+export { chunkText, DEFAULT_CHUNK_OPTIONS, type Chunk, type ChunkOptions } from './search/chunk.js';
+export { agentsWindowLink, sessionOpenTargets, type SessionOpenTarget } from './links.js';
+export { copilotHome, defaultIndexDir, vscodeUserDataRoots } from './paths.js';
+export { replayMutationLog } from './sources/vscodeChat.js';
+export type { StoredPrompt } from './store.js';
+export type { HostEvent, HostInitOptions, HostMethods, HostRequest, HostResponse } from './protocol.js';

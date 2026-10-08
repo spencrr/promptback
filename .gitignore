@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.vsix
+*.tsbuildinfo
+.vitest-cache/
+coverage/
+.models/
+packages/vscode/models/

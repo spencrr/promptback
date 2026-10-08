@@ -1,0 +1,27 @@
+{
+  "name": "agent-window-semantic-search",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local semantic search over every prompt you've sent to Copilot agents (Agents window, Copilot CLI, VS Code Chat).",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/cli",
+    "packages/vscode"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "npm run build -w packages/core && npm run build -w packages/cli && npm run build -w packages/vscode",
+    "typecheck": "tsc -p packages/core && tsc -p packages/cli && tsc -p packages/vscode",
+    "test": "vitest run",
+    "package": "npm run package -w packages/vscode"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}

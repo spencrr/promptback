@@ -1,0 +1,35 @@
+// Bundles the extension (extension host) and the index host process (child process) with esbuild.
+import * as esbuild from 'esbuild';
+import { fileURLToPath } from 'node:url';
+import * as path from 'node:path';
+
+const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const production = process.argv.includes('--production');
+const watch = process.argv.includes('--watch');
+
+/** @type {esbuild.BuildOptions} */
+const common = {
+	bundle: true,
+	platform: 'node',
+	format: 'cjs',
+	target: 'node22',
+	sourcemap: production ? false : 'linked',
+	minify: production,
+	// onnxruntime-node is a native addon shipped next to the bundle; `vscode` is provided by the host.
+	external: ['vscode', 'onnxruntime-node'],
+	logLevel: 'info',
+	absWorkingDir: root,
+};
+
+const builds = [
+	{ ...common, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js' },
+	{ ...common, entryPoints: ['../core/src/host.ts'], outfile: 'dist/host.js' },
+];
+
+if (watch) {
+	for (const b of builds) {
+		await (await esbuild.context(b)).watch();
+	}
+} else {
+	await Promise.all(builds.map(b => esbuild.build(b)));
+}
