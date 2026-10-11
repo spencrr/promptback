@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { sessionOpenTargets } from '@awss/core/links';
+import { sessionOpenTargets } from '@yesterprompt/core/links';
 import { copyPrompt, insertIntoChat, openSession, previewPrompt } from '../actions.js';
 import type { HostClient } from '../hostClient.js';
 import type { FromWebview, IndexAction, IndexSettings, OpenRequest, ToWebview } from './messages.js';
 
-export const EXPLORER_VIEW_TYPE = 'awss.explorer';
-const SCHEME = 'prompt-history';
+export const EXPLORER_VIEW_TYPE = 'yesterprompt.explorer';
+const SCHEME = 'yesterprompt';
 /**
  * A virtual resource for the Explorer. It has no file extension so VS Code doesn't offer "Configure default editor
  * for '*.x'". It is a custom editor (not a plain webview panel) because in the Agents window only custom editors on a
@@ -68,7 +68,7 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 			}),
 			host.onProgress(progress => provider.postToAll({ type: 'progress', progress })),
 			vscode.workspace.onDidChangeConfiguration(e => {
-				if (e.affectsConfiguration('awss')) {
+				if (e.affectsConfiguration('yesterprompt')) {
 					// The index process restarts on these settings; give it a moment before reporting.
 					setTimeout(() => void provider.postStatusToAll(), 1500);
 				}
@@ -199,7 +199,7 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 				await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${this.context.extension.id}`);
 				return;
 			case 'showLog':
-				await vscode.commands.executeCommand('awss.showLog');
+				await vscode.commands.executeCommand('yesterprompt.showLog');
 				return;
 			case 'revealIndex': {
 				const status = await this.host.request('status', undefined as never).catch(() => undefined);
@@ -241,7 +241,7 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 }
 
 function readSettings(): IndexSettings {
-	const c = vscode.workspace.getConfiguration('awss');
+	const c = vscode.workspace.getConfiguration('yesterprompt');
 	const get = <K extends keyof IndexSettings>(k: K) => c.get(SETTING_KEYS[k]) as IndexSettings[K];
 	return {
 		provider: get('provider'), model: get('model'), threads: get('threads'), embedOrigins: get('embedOrigins'),
@@ -262,7 +262,7 @@ async function updateSetting(key: keyof IndexSettings, value: unknown): Promise<
 			return;
 		}
 	}
-	await vscode.workspace.getConfiguration('awss').update(SETTING_KEYS[key], value, vscode.ConfigurationTarget.Global);
+	await vscode.workspace.getConfiguration('yesterprompt').update(SETTING_KEYS[key], value, vscode.ConfigurationTarget.Global);
 }
 
 /** Backing file system for the Explorer's virtual resource. "Reopen With > Text Editor" can't be hidden, so it explains itself. */

@@ -3,7 +3,7 @@
  * histogram, colours and the graph model. The host returns every matching occurrence once per query; everything here
  * is instant and local, and unit-tested.
  */
-import type { ExploreResult, ExploreRow, PromptOrigin, SessionInfo } from '@awss/core/types';
+import type { ExploreResult, ExploreRow, PromptOrigin, SessionInfo } from '@yesterprompt/core/types';
 import type { GraphEdge, GraphNode } from './graph.js';
 
 export type FacetKey = 'origin' | 'client' | 'repo';

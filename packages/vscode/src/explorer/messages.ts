@@ -1,11 +1,11 @@
-import type { ExploreResult, IndexStatus, PromptRecord, SessionInfo, SessionOpenTarget, SyncProgress } from '@awss/core/types';
+import type { ExploreResult, IndexStatus, PromptRecord, SessionInfo, SessionOpenTarget, SyncProgress } from '@yesterprompt/core/types';
 
 export type ExplorerView = 'table' | 'graph';
 
 /** Actions on a prompt (all handled by the extension so they work identically to the quick picker). */
 export type PromptAction = 'copy' | 'insert' | 'preview' | 'open';
 
-/** Settings the Index panel can change (keys under `awss.`). */
+/** Settings the Index panel can change (keys under `yesterprompt.`). */
 export interface IndexSettings {
 	readonly provider: 'local' | 'openai-compatible' | 'none';
 	readonly model: string;

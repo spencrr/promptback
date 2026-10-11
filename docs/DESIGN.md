@@ -1,4 +1,4 @@
-# Design: semantic search over agent prompt history
+# Yesterprompt: design
 
 This document records the decisions behind this repository. It synthesizes five independent design proposals, each written by a separate research agent from a different angle:
 
@@ -22,25 +22,25 @@ This document records the decisions behind this repository. It synthesizes five 
 ## Architecture
 
 ```
-VS Code window(s) / Agents window             CLI (awss)            MCP server (planned)
+VS Code window(s) / Agents window             CLI (yester)          MCP server (planned)
   extension (extension host, ~15 KB)              │                        │
     Quick Pick, commands, preview, open-session   │                        │
     └─ fork(ELECTRON_RUN_AS_NODE) ─► host.js       │                        │
                                      │            │                        │
                                      ▼            ▼                        ▼
-                         ┌──────────── @awss/core: PromptSearchEngine ────────────┐
+                         ┌──────── @yesterprompt/core: PromptSearchEngine ────────┐
                          │ sources/ (streaming, incremental, read-only)           │
                          │ store.ts  node:sqlite: prompts, FTS5, chunks, vectors   │
                          │ embed/    pluggable: local ONNX | OpenAI-compatible     │
                          │ search/   query language, hybrid ranking                │
                          └────────────────────────────────────────────────────────┘
                                      │
-               %LOCALAPPDATA%/agent-window-semantic-search/index.db (shared, WAL, single-writer lease)
+                  ~/.yesterprompt/index.db (shared, WAL, single-writer lease)
 ```
 
 - **Core has no `vscode` dependency.** The extension, the CLI and a future MCP server are thin adapters over `PromptSearchEngine` (`sync`, `search`, `getPrompt`, `getSessionPrompts`, `status`).
 - **Inference runs in a child process.** The child is forked with VS Code's own runtime, so there's nothing to install. It unloads the model after 15 min idle, and it is restarted if it crashes.
-- **One index for all windows.** The index lives in a fixed per-user folder, so the main window, the Agents window (separate profile), the CLI and MCP share it. A lease row in SQLite elects a single writer. Other processes just read.
+- **One index for all windows.** The index lives in a fixed per-user folder (`~/.yesterprompt`, or `$YESTERPROMPT_HOME`), so the main window, the Agents window (separate profile), the CLI and MCP share it. A lease row in SQLite elects a single writer. Other processes just read.
 - **No native modules beyond onnxruntime.** `node:sqlite` with FTS5 ships in VS Code's Electron Node 24 and in Node ≥ 22.13.
 
 ## Embeddings
@@ -111,8 +111,8 @@ This finds 27 forked sessions in the current corpus. It needs no re-scan, and it
 
 ## VS Code integration
 
-- **Quick search.** A Quick Pick with live debounced search. `sortByLabel = false` is set at runtime (the setter isn't gated by the proposal) plus `alwaysShow`, to keep our ranking. Each item has Copy, Insert into chat (`workbench.action.chat.open {query, isPartialQuery}`), Preview (virtual `awss-prompt:` document) and Open session buttons. A title button hands the query to the Explorer.
-- **Prompt Explorer.** A read-only **custom editor** on a virtual `prompt-history:` file. In the Agents window, custom editors on a non-untitled resource get the whole editor area with no docked Details panel (`vs/sessions/contrib/layout/browser/desktop/desktopSharedHelpers.ts` `isEditorWithoutDockedDetails`); plain webview panels don't.
+- **Quick search.** A Quick Pick with live debounced search. `sortByLabel = false` is set at runtime (the setter isn't gated by the proposal) plus `alwaysShow`, to keep our ranking. Each item has Copy, Insert into chat (`workbench.action.chat.open {query, isPartialQuery}`), Preview (virtual `yesterprompt-prompt:` document) and Open session buttons. A title button hands the query to the Explorer.
+- **Prompt Explorer.** A read-only **custom editor** on a virtual `yesterprompt:` file. In the Agents window, custom editors on a non-untitled resource get the whole editor area with no docked Details panel (`vs/sessions/contrib/layout/browser/desktop/desktopSharedHelpers.ts` `isEditorWithoutDockedDetails`); plain webview panels don't.
   - **Webview.** Preact, ~70 KB, styled only with theme variables. Strict CSP with no remote content (images and links could leak prompt text). Prompt text is rendered as preformatted text with highlights, never as HTML or Markdown.
   - **Data flow.** One `explore(query)` call returns every matching occurrence, from a single snapshot. Facets, counts that exclude their own filter, sorting, duplicate hiding and the date histogram are computed client-side (`webview/model.ts`, unit-tested), so filter clicks are instant and can't disagree with each other. Superseded responses are dropped by request id. Full text and session context are fetched on selection. State is restored with `setState`.
   - **Graph ("constellation").** A per-query radial layout:
@@ -139,7 +139,7 @@ This finds 27 forked sessions in the current corpus. It needs no re-scan, and it
 
   Tool-call tallies are stored with the incremental read cursor and were backfilled once for existing indexes.
 - **Explorer tab.** `panel.title` and `panel.iconPath` override the file name and icon (`CustomEditorInput.getName` prefers the webview title).
-  - The virtual resource `prompt-history:/Prompt Explorer` has no extension, so VS Code doesn't offer "Configure default editor for '*.x'", which is gated on `extname(resource) !== ''` in `editorResolverService.ts`.
+  - The virtual resource `yesterprompt:/Prompt Explorer` has no extension, so VS Code doesn't offer "Configure default editor for '*.x'", which is gated on `extname(resource) !== ''` in `editorResolverService.ts`.
   - "Reopen With → Text Editor" can't be hidden: the text editor is registered for `*` and extensions can't declare exclusive priority. That view explains what the page is.
   - Comparable non-file pages in other extensions (GitLens Commit Graph, GitHub PR overview) use plain webview panels. We use a custom editor only because the Agents window gives the full editor area to custom editors, not plain panels.
 - **Sidebar.** An activity-bar container (main window only) with a Recent Sessions tree and an Index view. Per the VS Code UX guidelines, the container holds real views rather than acting as a button that opens an editor.

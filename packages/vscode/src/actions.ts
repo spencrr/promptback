@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import type { PromptRecord, SessionInfo } from '@awss/core';
-import { sessionOpenTargets, type SessionOpenTarget } from '@awss/core/links';
+import type { PromptRecord, SessionInfo } from '@yesterprompt/core';
+import { sessionOpenTargets, type SessionOpenTarget } from '@yesterprompt/core/links';
 import type { HostClient } from './hostClient.js';
 
-export const PREVIEW_SCHEME = 'awss-prompt';
+export const PREVIEW_SCHEME = 'yesterprompt-prompt';
 
 export async function copyPrompt(prompt: PromptRecord): Promise<void> {
 	await vscode.env.clipboard.writeText(prompt.text);

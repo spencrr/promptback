@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import type { IndexStatus, RecentSession } from '@awss/core';
+import type { IndexStatus, RecentSession } from '@yesterprompt/core';
 import type { HostClient } from './hostClient.js';
 
-/** Sidebar trees in the "Prompt History" activity-bar container (main window; the Agents window has no activity bar). */
+/** Sidebar trees in the "Yesterprompt" activity-bar container (main window; the Agents window has no activity bar). */
 
 type SessionNode =
 	| { readonly kind: 'group'; readonly label: string; readonly sessions: readonly RecentSession[] }
@@ -70,7 +70,7 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionNode
 				item.iconPath = new vscode.ThemeIcon('comment');
 				item.contextValue = 'prompt';
 				item.id = `prompt:${node.prompt.id}`;
-				item.command = { command: 'awss.revealPrompt', title: 'Show in Prompt Explorer', arguments: [node] };
+				item.command = { command: 'yesterprompt.revealPrompt', title: 'Show in Prompt Explorer', arguments: [node] };
 				return item;
 			}
 		}
@@ -109,7 +109,7 @@ export class IndexTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
 			rows.splice(2, 0, row('Working', this.progress, 'loading~spin'));
 		}
 		if (s.errors.length) {
-			rows.push(row('Problems', `${s.errors.length}`, 'warning', s.errors.slice(0, 5).join('\n'), 'awss.showLog'));
+			rows.push(row('Problems', `${s.errors.length}`, 'warning', s.errors.slice(0, 5).join('\n'), 'yesterprompt.showLog'));
 		}
 		return rows;
 	}

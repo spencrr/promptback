@@ -1,7 +1,7 @@
 import './styles.css';
 import { render } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { ExploreResult } from '@awss/core/types';
+import type { ExploreResult } from '@yesterprompt/core/types';
 import type { PromptAction, ToWebview } from '../src/explorer/messages.js';
 import { Icon } from './components/common.js';
 import { Detail } from './components/Detail.js';

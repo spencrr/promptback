@@ -1,5 +1,5 @@
 {
-  "name": "@awss/core",
+  "name": "@yesterprompt/core",
   "version": "0.1.0",
   "private": true,
   "description": "Ingestion, indexing, embeddings and hybrid search over local Copilot / VS Code prompt history.",

@@ -1,5 +1,5 @@
 // Launches the locally installed VS Code with an isolated profile, loads this extension from source (dist/) and
-// runs ./suite.cjs inside the extension host. The prompt index is written to a temp AWSS_HOME (or one you pass).
+// runs ./suite.cjs inside the extension host. The prompt index is written to a temp YESTERPROMPT_HOME (or one you pass).
 // Usage: node test/integration/runTest.mjs [--code <path to Code executable>] [--index-dir <dir>]
 import { runTests } from '@vscode/test-electron';
 import * as fs from 'node:fs';
@@ -16,7 +16,7 @@ const defaultCode = process.platform === 'win32'
 	? path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Microsoft VS Code', 'Code.exe')
 	: undefined;
 const vscodeExecutablePath = arg('--code') ?? (defaultCode && fs.existsSync(defaultCode) ? defaultCode : undefined);
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'awss-it-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yesterprompt-it-'));
 const indexDir = arg('--index-dir') ?? path.join(tmp, 'index');
 
 try {
@@ -26,7 +26,7 @@ try {
 		extensionDevelopmentPath,
 		extensionTestsPath: path.join(here, 'suite.cjs'),
 		launchArgs: ['--disable-extensions', '--user-data-dir', path.join(tmp, 'user'), '--extensions-dir', path.join(tmp, 'ext'), '--disable-workspace-trust', '--skip-welcome'],
-		extensionTestsEnv: { AWSS_HOME: indexDir, AWSS_IT: '1', AWSS_IT_HOLD: process.env.AWSS_IT_HOLD ?? '', AWSS_IT_EXPLORER_HOLD: process.env.AWSS_IT_EXPLORER_HOLD ?? '' },
+		extensionTestsEnv: { YESTERPROMPT_HOME: indexDir, YESTERPROMPT_IT: '1', YESTERPROMPT_IT_HOLD: process.env.YESTERPROMPT_IT_HOLD ?? '', YESTERPROMPT_IT_EXPLORER_HOLD: process.env.YESTERPROMPT_IT_EXPLORER_HOLD ?? '' },
 	});
 	console.log('Integration tests passed');
 } catch (e) {

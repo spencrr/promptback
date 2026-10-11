@@ -47,7 +47,7 @@ function writeSession(id: string, yaml: string, events: { type: string; data: ob
 }
 
 beforeEach(() => {
-	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'awss-engine-'));
+	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yesterprompt-engine-'));
 	copilotHome = path.join(tmp, 'copilot');
 	vscodeRoot = path.join(tmp, 'Code');
 	const design = 'Write a design doc for the tree view in CoPyRIT with goals and non-goals';

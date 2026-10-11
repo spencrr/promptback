@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { ExploreResult, ExploreRow } from '@awss/core/types';
+import type { ExploreResult, ExploreRow } from '@yesterprompt/core/types';
 import { type DisplayItem, ORIGIN_LABELS, OTHER_COLOR, type SortKey, type ViewModel, type ViewState, relativeTime } from '../model.js';
 import type { ColumnKey } from '../vscode.js';
 import { Highlighted, Icon, RepoChip, SourcePill, TopicChip } from './common.js';

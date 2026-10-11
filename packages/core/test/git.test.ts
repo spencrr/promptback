@@ -7,7 +7,7 @@ import { findGitRoot, gitRootsInText, parseRemote, repoName } from '../src/util/
 
 let tmp: string;
 beforeEach(() => {
-	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'awss-git-'));
+	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yesterprompt-git-'));
 });
 afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 

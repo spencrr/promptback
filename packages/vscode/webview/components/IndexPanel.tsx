@@ -1,4 +1,4 @@
-import type { IndexStatus, SyncProgress } from '@awss/core/types';
+import type { IndexStatus, SyncProgress } from '@yesterprompt/core/types';
 import type { IndexAction, IndexSettings } from '../../src/explorer/messages.js';
 import { relativeTime } from '../model.js';
 import { post } from '../vscode.js';
@@ -114,7 +114,7 @@ export function IndexPanel({ state, onClose }: { state: IndexState; onClose: () 
 								<span>Model / deployment</span>
 								<input type="text" value={cfg.openaiModel} onChange={e => set('openaiModel', (e.target as HTMLInputElement).value)} />
 							</label>
-							<div class="muted small">API key: set <code>awss.embedding.openai.apiKeyEnv</code> to the name of an environment variable (keys are never stored in settings).</div>
+							<div class="muted small">API key: set <code>yesterprompt.embedding.openai.apiKeyEnv</code> to the name of an environment variable (keys are never stored in settings).</div>
 						</>
 					)}
 					<div class="field">

@@ -1,8 +1,8 @@
 {
-  "name": "agent-window-semantic-search",
+  "name": "yesterprompt-monorepo",
   "private": true,
   "version": "0.1.0",
-  "description": "Local semantic search over every prompt you've sent to Copilot agents (Agents window, Copilot CLI, VS Code Chat).",
+  "description": "Semantic search over every prompt you've sent to your AI coding agents. Local-first.",
   "type": "module",
   "workspaces": [
     "packages/core",

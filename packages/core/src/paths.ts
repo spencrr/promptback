@@ -30,16 +30,7 @@ export function vscodeUserDataRoots(): { product: string; root: string }[] {
 
 /** Shared, window/profile-independent index directory (the Agents window uses a separate profile, so globalStorage is not shared). */
 export function defaultIndexDir(): string {
-	if (process.env['AWSS_HOME']) {
-		return process.env['AWSS_HOME'];
-	}
-	if (process.platform === 'win32') {
-		return path.join(process.env['LOCALAPPDATA'] || path.join(os.homedir(), 'AppData', 'Local'), 'agent-window-semantic-search');
-	}
-	if (process.platform === 'darwin') {
-		return path.join(os.homedir(), 'Library', 'Caches', 'agent-window-semantic-search');
-	}
-	return path.join(process.env['XDG_CACHE_HOME'] || path.join(os.homedir(), '.cache'), 'agent-window-semantic-search');
+	return process.env['YESTERPROMPT_HOME'] || path.join(os.homedir(), '.yesterprompt');
 }
 
 export function isDir(p: string): boolean {

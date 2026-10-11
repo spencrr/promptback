@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { PromptOrigin, SearchHit, SearchResult } from '@awss/core';
+import type { PromptOrigin, SearchHit, SearchResult } from '@yesterprompt/core';
 import { copyPrompt, insertIntoChat, openSession, previewPrompt } from './actions.js';
 import type { HostClient } from './hostClient.js';
 
@@ -22,7 +22,7 @@ export interface SearchPickerOptions {
 }
 
 export async function showSearchPicker(host: HostClient, opts: SearchPickerOptions = {}): Promise<void> {
-	const config = vscode.workspace.getConfiguration('awss');
+	const config = vscode.workspace.getConfiguration('yesterprompt');
 	const limit = config.get<number>('maxResults', 50);
 	let includeAll = !!opts.includeAllOrigins;
 
@@ -32,7 +32,7 @@ export async function showSearchPicker(host: HostClient, opts: SearchPickerOptio
 	// Keep our ranking: the setter exists at runtime without the proposed API; ignored if unsupported.
 	(qp as unknown as { sortByLabel: boolean }).sortByLabel = false;
 	qp.placeholder = 'Search your prompts — e.g. "tree view design doc" repo:PyRIT after:2026-09 client:cli';
-	qp.title = 'Prompt History';
+	qp.title = 'Yesterprompt';
 	qp.keepScrollPosition = false;
 
 	const btnScope = (): vscode.QuickInputButton => ({
@@ -145,7 +145,7 @@ export async function showSearchPicker(host: HostClient, opts: SearchPickerOptio
 }
 
 function titleFor(res: SearchResult, includeAll: boolean): string {
-	const parts = [`Prompt History — ${res.hits.length} result${res.hits.length === 1 ? '' : 's'}`];
+	const parts = [`Yesterprompt — ${res.hits.length} result${res.hits.length === 1 ? '' : 's'}`];
 	if (!res.freeText && !res.query.trim()) {
 		parts.push('most recent');
 	}
@@ -163,7 +163,7 @@ function titleFor(res: SearchResult, includeAll: boolean): string {
 
 function toItems(res: SearchResult): HitItem[] {
 	if (res.hits.length === 0) {
-		return [{ label: res.query.trim() ? '$(info) No matching prompts' : '$(info) No prompts indexed yet', alwaysShow: true, detail: 'Try fewer words, remove filters, or run "Prompt History: Re-scan and Index Now".' }];
+		return [{ label: res.query.trim() ? '$(info) No matching prompts' : '$(info) No prompts indexed yet', alwaysShow: true, detail: 'Try fewer words, remove filters, or run "Yesterprompt: Re-scan and Index Now".' }];
 	}
 	return res.hits.map(hit => {
 		const s = hit.session;

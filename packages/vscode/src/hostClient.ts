@@ -1,6 +1,6 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import * as vscode from 'vscode';
-import type { HostEvent, HostInitOptions, HostMethods, HostResponse, SyncProgress, SyncResult } from '@awss/core';
+import type { HostEvent, HostInitOptions, HostMethods, HostResponse, SyncProgress, SyncResult } from '@yesterprompt/core';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 

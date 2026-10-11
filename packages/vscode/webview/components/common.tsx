@@ -1,5 +1,5 @@
 /** Small presentational pieces shared by the table, details pane and filters. */
-import type { SessionInfo } from '@awss/core/types';
+import type { SessionInfo } from '@yesterprompt/core/types';
 import { CLIENT_ICONS, CLIENT_LABELS, type RepoKind, repoInfo, segments } from '../model.js';
 
 export function Icon({ name, title }: { name: string; title?: string }) {
