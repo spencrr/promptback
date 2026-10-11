@@ -75,7 +75,7 @@ Agents get five read-only tools:
 
   VS Code reads this file too when its Copilot CLI discovery is on (`chat.mcp.discovery.enabled`, on by default in current versions). In that case the extension doesn't register a second copy, and VS Code chat and the Agents window use this entry.
 
-Each client starts its own server process. An idle server does no work. When a tool is called it picks up new prompts (waiting at most 2 s), and it loads the embedding model only for queries that need it. On this machine that is about 85 MB idle and 200 MB with the model loaded, and the model is released after 5 idle minutes.
+Each client starts its own server process. An idle server does no work. When a tool is called it picks up new prompts (waiting at most 2 s), and it loads the embedding model only for queries that need it. Measured with Node 26 on Windows: about 85 MB idle and 200 MB with the model loaded. The model is released after 5 idle minutes.
 
 Tool results reach the agent's model like any other context, so a past prompt can end up in a different project or model than the one it was written for.
 
