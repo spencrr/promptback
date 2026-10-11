@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PromptSearchEngine } from '../src/engine.js';
 import { chunkText } from '../src/search/chunk.js';
 import { type EmbeddingProvider, l2normalize } from '../src/embed/provider.js';
@@ -83,6 +83,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await Promise.all(engines.splice(0).map(e => e.close().catch(() => undefined)));
 	fs.rmSync(tmp, { recursive: true, force: true });
 });
@@ -168,6 +169,24 @@ describe('PromptSearchEngine', () => {
 		expect(r.removedPrompts).toBe(1);
 		expect((await engine.search('retry_policy')).hits).toHaveLength(0);
 		await engine.close();
+	});
+
+	it('syncs with the source settings saved in the index when given none (CLI, MCP)', async () => {
+		const vscodeRoots = [{ product: 'Code', root: vscodeRoot }];
+		const ext = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), copilotHome, vscodeChat: false, retainDeleted: true, vscodeRoots, embedding: { kind: 'none' } });
+		engines.push(ext);
+		await ext.sync();
+		await ext.close();
+		fs.rmSync(path.join(copilotHome, 'session-state', 'sess-c'), { recursive: true });
+
+		// Like `yester index` on a machine whose own Copilot home is elsewhere.
+		vi.stubEnv('COPILOT_HOME', path.join(tmp, 'elsewhere'));
+		const cli = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), vscodeRoots, embedding: { kind: 'none' } });
+		engines.push(cli);
+		const r = await cli.sync();
+		expect(r.removedPrompts).toBe(0);
+		expect(cli.status().promptsBySource).toEqual({ copilot: 5 });
+		expect((await cli.search('retry_policy')).hits).toHaveLength(1);
 	});
 
 	it('lets only one process index at a time', async () => {

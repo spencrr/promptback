@@ -26,6 +26,7 @@ const common = {
 const builds = [
 	{ ...common, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js' },
 	{ ...common, entryPoints: ['../core/src/host.ts'], outfile: 'dist/host.js' },
+	{ ...common, entryPoints: ['src/mcpMain.ts'], outfile: 'dist/mcp.js' },
 	{
 		...common,
 		platform: 'browser',

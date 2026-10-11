@@ -18,7 +18,12 @@ import type { ExploreResult, IndexStatus, PromptOrigin, PromptRecord, RecentSess
 export interface EngineOptions {
 	/** Directory for `index.db` and downloaded models. Shared by every window/process. */
 	readonly indexDir?: string;
-	/** Copilot home (`~/.copilot`); `null` disables the Copilot source. */
+	/**
+	 * Copilot home (`~/.copilot`); `null` disables the Copilot source.
+	 * This, {@link vscodeChat} and {@link retainDeleted} are saved in the index whenever any of them is given (the VS Code
+	 * extension always passes them). A process that passes none (the CLI and its MCP server) uses the saved values, so every
+	 * process that syncs a shared index indexes the same sources and keeps the same deleted sessions.
+	 */
 	readonly copilotHome?: string | null;
 	/** VS Code user-data roots; `null` disables VS Code chat + agent-host sources. */
 	readonly vscodeRoots?: readonly { product: string; root: string }[] | null;
@@ -49,9 +54,17 @@ export interface SyncOptions {
 const LEASE_TTL = 5 * 60_000;
 const EMBED_BATCH = 64;
 
+/** The source options saved in an index (see {@link EngineOptions.copilotHome}). */
+interface SourceSettings {
+	/** Absent = the default Copilot home; `null` = Copilot source off. */
+	readonly copilotHome?: string | null;
+	readonly vscodeChat: boolean;
+	readonly retainDeleted: boolean;
+}
+
 /**
- * Transport-neutral facade over ingestion, indexing and search. The VS Code extension, the CLI and a future
- * MCP server are thin adapters over this class.
+ * Transport-neutral facade over ingestion, indexing and search. The VS Code extension, the CLI and the MCP server
+ * are thin adapters over this class.
  */
 export class PromptSearchEngine {
 	readonly store: Store;
@@ -163,17 +176,18 @@ export class PromptSearchEngine {
 		try {
 			opts.onProgress?.({ phase: 'scan', message: 'Scanning prompt history…' });
 			const chunker = (text: string) => chunkText(text, this.chunkOpts);
+			const sources = this.sourceSettings();
 
-			const home = this.opts.copilotHome === undefined ? defaultCopilotHome() : this.opts.copilotHome;
+			const home = sources.copilotHome === undefined ? defaultCopilotHome() : sources.copilotHome;
 			if (home) {
-				const r = await this.syncCopilot(home, chunker, errors);
+				const r = await this.syncCopilot(home, chunker, errors, sources.retainDeleted);
 				added += r[0];
 				removed += r[1];
 			}
 			const roots = this.opts.vscodeRoots === undefined ? vscodeUserDataRoots() : this.opts.vscodeRoots;
 			if (roots) {
-				if (this.opts.vscodeChat !== false) {
-					const r = await this.syncVscodeChat(roots, chunker, errors);
+				if (sources.vscodeChat) {
+					const r = await this.syncVscodeChat(roots, chunker, errors, sources.retainDeleted);
 					added += r[0];
 					removed += r[1];
 				}
@@ -206,11 +220,32 @@ export class PromptSearchEngine {
 		return this.opts.embedOrigins ?? ['human'];
 	}
 
+	/** Saves the source options when any are given; otherwise uses the saved ones (defaults for a new index). Call under the lease. */
+	private sourceSettings(): SourceSettings {
+		const { copilotHome, vscodeChat, retainDeleted } = this.opts;
+		if (copilotHome !== undefined || vscodeChat !== undefined || retainDeleted !== undefined) {
+			const given: SourceSettings = { copilotHome, vscodeChat: vscodeChat !== false, retainDeleted: retainDeleted === true };
+			this.store.setMeta('sources', JSON.stringify(given));
+			return given;
+		}
+		let saved: Partial<Record<keyof SourceSettings, unknown>> = {};
+		try {
+			saved = JSON.parse(this.store.getMeta('sources') ?? '{}') ?? {};
+		} catch {
+			// Unreadable: use the defaults.
+		}
+		return {
+			copilotHome: typeof saved.copilotHome === 'string' || saved.copilotHome === null ? saved.copilotHome : undefined,
+			vscodeChat: saved.vscodeChat !== false,
+			retainDeleted: saved.retainDeleted === true,
+		};
+	}
+
 	private bumpRevision(): void {
 		this.store.setMeta('revision', `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 	}
 
-	private async syncCopilot(home: string, chunker: (t: string) => ReturnType<typeof chunkText>, errors: string[]): Promise<[number, number]> {
+	private async syncCopilot(home: string, chunker: (t: string) => ReturnType<typeof chunkText>, errors: string[], retainDeleted: boolean): Promise<[number, number]> {
 		let added = 0, removed = 0;
 		const sessions = listCopilotSessions(home);
 		const seen = new Set<string>();
@@ -259,7 +294,7 @@ export class PromptSearchEngine {
 				}
 			}
 		}
-		if (!this.opts.retainDeleted) {
+		if (!retainDeleted) {
 			for (const file of eventStates.keys()) {
 				if (!seen.has(file) && !fs.existsSync(file)) {
 					const sessionId = path.basename(path.dirname(file));
@@ -274,7 +309,7 @@ export class PromptSearchEngine {
 		return [added, removed];
 	}
 
-	private async syncVscodeChat(roots: readonly { product: string; root: string }[], chunker: (t: string) => ReturnType<typeof chunkText>, errors: string[]): Promise<[number, number]> {
+	private async syncVscodeChat(roots: readonly { product: string; root: string }[], chunker: (t: string) => ReturnType<typeof chunkText>, errors: string[], retainDeleted: boolean): Promise<[number, number]> {
 		let added = 0, removed = 0;
 		const seen = new Set<string>();
 		const states = this.store.loadFileStates<{ size: number; mtimeMs: number; key: string; v?: number }>('vscode-chat');
@@ -307,7 +342,7 @@ export class PromptSearchEngine {
 				}
 			}
 		}
-		if (!this.opts.retainDeleted) {
+		if (!retainDeleted) {
 			for (const [file, prev] of states) {
 				if (!seen.has(file) && !fs.existsSync(file)) {
 					removed += this.store.transaction(() => {
@@ -447,6 +482,22 @@ export class PromptSearchEngine {
 
 	getSessionPrompts(sessionKey: string): PromptRecord[] {
 		return this.store.getSessionPrompts(sessionKey);
+	}
+
+	/** Sessions whose key, native id or Agents-window id equals `id` (case-insensitive), else starts with it. */
+	findSessions(id: string): SessionInfo[] {
+		const q = id.trim().toLowerCase();
+		if (!q) {
+			return [];
+		}
+		const all = [...this.corpus.get().sessions.values()];
+		const ids = (s: SessionInfo) => [s.key, s.sessionId, s.agentHostSessionId].flatMap(v => (v ? [v.toLowerCase()] : []));
+		const exact = all.filter(s => ids(s).includes(q));
+		return exact.length ? exact : all.filter(s => ids(s).some(v => v.startsWith(q)));
+	}
+
+	get modelLoaded(): boolean {
+		return !!this.provider;
 	}
 
 	/** Most recently active sessions with your own prompts (newest first), for the sidebar. */

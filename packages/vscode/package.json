@@ -2,7 +2,7 @@
   "name": "yesterprompt",
   "displayName": "Yesterprompt",
   "description": "Semantic search over every prompt you've sent to your AI coding agents: Copilot CLI, the VS Code Agents window, autopilot and Chat. Local-first.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "publisher": "spencrr",
   "repository": {
@@ -152,6 +152,12 @@
             "maximum": 500,
             "description": "Maximum results shown in the search picker.",
             "order": 1
+          },
+          "yesterprompt.mcp.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Offer the Yesterprompt MCP server to chat agents in VS Code, including the Agents window, so they can search and read your past prompts (and send what they find to their model). Skipped when Copilot CLI's `mcp-config.json` already defines a `yesterprompt` server, which VS Code then loads instead.",
+            "order": 2
           }
         }
       },
@@ -397,6 +403,12 @@
           }
         ],
         "priority": "default"
+      }
+    ],
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "yesterprompt",
+        "label": "Yesterprompt"
       }
     ],
     "viewsContainers": {

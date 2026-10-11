@@ -1,6 +1,6 @@
 {
   "name": "@yesterprompt/core",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Ingestion, indexing, embeddings and hybrid search over local Copilot / VS Code prompt history.",
   "type": "module",
@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./host": "./src/host.ts",
     "./links": "./src/links.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./mcp": "./src/mcp.ts"
   },
   "scripts": {
     "build": "tsc -p .",
@@ -16,7 +17,9 @@
   },
   "dependencies": {
     "@huggingface/tokenizers": "^0.2.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "onnxruntime-node": "1.30.0",
-    "yaml": "^2.8.0"
+    "yaml": "^2.8.0",
+    "zod": "^4.6.5"
   }
 }

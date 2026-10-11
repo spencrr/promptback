@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import * as fs from 'node:fs';
 import { parseArgs } from 'node:util';
 import { type EmbeddingConfig, type EngineOptions, LOCAL_MODELS, PromptSearchEngine, type SearchHit, sessionOpenTargets } from '@yesterprompt/core';
+import { serveMcp } from '@yesterprompt/core/mcp';
 
 const HELP = `yester — Yesterprompt: semantic search over every prompt you've sent to your AI coding agents
 
@@ -10,6 +12,7 @@ Usage:
   yester get <promptId>                 Print one prompt (full text)
   yester status [--json]                Index statistics
   yester models                         List local embedding models
+  yester mcp                            Run the MCP server on stdio (for Copilot CLI and other agents)
 
 Query syntax: free text plus repo:, branch:, cwd:, after:, before:, on:, from:(me|agent|skill|system|any),
 src:(cli|vscode), client:(agent-host|cli|autopilot|chat), session:, model:, mode:(lex|sem), sort:recent,
@@ -51,6 +54,11 @@ async function main() {
 	}
 
 	const embedding: EmbeddingConfig = values['no-model'] ? { kind: 'none' } : { kind: 'local', model: values.model ?? 'bge-small-en-v1.5' };
+	if (cmd === 'mcp') {
+		const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+		await serveMcp({ indexDir: values['index-dir'], embedding, allowModelDownload: !values['no-download'] }, version);
+		return;
+	}
 	const opts: EngineOptions = {
 		indexDir: values['index-dir'],
 		embedding,

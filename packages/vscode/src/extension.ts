@@ -3,6 +3,7 @@ import type { EmbeddingConfig, HostInitOptions, IndexStatus, PromptOrigin, Recen
 import { PREVIEW_SCHEME, PromptPreviewProvider, copyPrompt, openSession } from './actions.js';
 import { ExplorerProvider, openExplorer } from './explorer/explorerProvider.js';
 import { HostClient } from './hostClient.js';
+import { registerMcpServer } from './mcpProvider.js';
 import { showSearchPicker } from './searchPicker.js';
 import { IndexTreeProvider, type SessionNode, SessionsTreeProvider } from './sidebar.js';
 
@@ -38,6 +39,7 @@ export function activate(context: vscode.ExtensionContext): YesterpromptApi {
 	registerStatusItem(context, host, log);
 	registerSidebar(context, host, explorer);
 	registerCommands(context, host, log, explorer);
+	registerMcpServer(context, () => buildOptions(context));
 	void offerAgentsWindow(context);
 
 	const ready = async () => {

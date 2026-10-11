@@ -22,7 +22,7 @@ This document records the decisions behind this repository. It synthesizes five 
 ## Architecture
 
 ```
-VS Code window(s) / Agents window             CLI (yester)          MCP server (planned)
+VS Code window(s) / Agents window             CLI (yester)          MCP server (stdio)
   extension (extension host, ~15 KB)              │                        │
     Quick Pick, commands, preview, open-session   │                        │
     └─ fork(ELECTRON_RUN_AS_NODE) ─► host.js       │                        │
@@ -38,9 +38,10 @@ VS Code window(s) / Agents window             CLI (yester)          MCP server (
                   ~/.yesterprompt/index.db (shared, WAL, single-writer lease)
 ```
 
-- **Core has no `vscode` dependency.** The extension, the CLI and a future MCP server are thin adapters over `PromptSearchEngine` (`sync`, `search`, `getPrompt`, `getSessionPrompts`, `status`).
+- **Core has no `vscode` dependency.** The extension, the CLI and the MCP server are thin adapters over `PromptSearchEngine` (`sync`, `search`, `getPrompt`, `getSessionPrompts`, `status`).
 - **Inference runs in a child process.** The child is forked with VS Code's own runtime, so there's nothing to install. It unloads the model after 15 min idle, and it is restarted if it crashes.
 - **One index for all windows.** The index lives in a fixed per-user folder (`~/.yesterprompt`, or `$YESTERPROMPT_HOME`), so the main window, the Agents window (separate profile), the CLI and MCP share it. A lease row in SQLite elects a single writer. Other processes just read.
+- **The index owns its source settings.** Which sources to index, the Copilot home, and whether to keep deleted sessions are saved in the index (`meta.sources`) by every process that sets them, which is the extension and the MCP server it launches. Processes that set none, such as the CLI and `yester mcp`, use the saved values. Otherwise any writer with default options, for example a Copilot CLI MCP server refreshing the index, would delete sessions that `retainDeleted` keeps and would index sources the user turned off.
 - **No native modules beyond onnxruntime.** `node:sqlite` with FTS5 ships in VS Code's Electron Node 24 and in Node ≥ 22.13.
 
 ## Embeddings
@@ -151,6 +152,39 @@ This finds 27 forked sessions in the current corpus. It needs no re-scan, and it
 - **Agents window.** The extension offers once, from a normal window, to add itself to `extensions.supportAgentsWindow`; it can't run in the Agents window before that. The Agents window has no status bar, so the Explorer has its own keybinding (Ctrl+Alt+E). Treated as experimental.
 - **Packaging.** One VSIX per platform (onnxruntime-node is native), about 33 MB for win32-x64, including the model. DirectML and DXC DLLs are pruned because we run on CPU.
 
+## MCP server
+
+`core/src/mcp.ts` (`@yesterprompt/core/mcp`) builds the server with the official TypeScript SDK and serves it over stdio. Two launchers share it:
+- `yester mcp`;
+- `dist/mcp.js` in the VSIX. VS Code starts it with its own runtime (`process.execPath` plus `ELECTRON_RUN_AS_NODE`, as the `McpStdioServerDefinition` docs suggest), and the extension passes its engine options in `YESTERPROMPT_OPTIONS`.
+
+Design points:
+- **Tools.**
+  - `search_prompts` reuses the quick-search pipeline: your own prompts by default, duplicates collapsed, a cap per session.
+  - `get_session` accepts a session key, a native id, an Agents-window id or a unique prefix. Long sessions show the first 20 and last 80 prompts, 400 characters each.
+  - `get_prompt`, `list_recent_sessions` and `index_status` complete the set.
+  - Output is plain text written for a model. Every hit carries the ids the next call needs, and cut text names the call that returns it in full.
+- **Read-only.** Every tool sets `readOnlyHint: true` and `openWorldHint: false`. In `mcpLanguageModelToolContribution.ts`, VS Code skips the "Run tool" confirmation for read-only MCP tools, and asks the user to review results only for open-world ones.
+- **Lazy.** Clients start one server per session, so an idle server does nothing.
+  - When a tool is called, the server runs an incremental sync, at most once every 30 s, and waits for it at most 2 s.
+  - It embeds new prompts only after a query has already loaded the model, and releases the model after 5 idle minutes.
+  - Measured under Node: about 85 MB idle and 200 MB with the model; Electron's runtime adds about 60 MB. The first search takes 1.4 s, later ones a few milliseconds.
+  - Writes take the same single-writer lease as every other process.
+- **Agents window.** VS Code forwards MCP servers to agent-host sessions under the definition's label, including servers that extensions contribute (`collectNonPluginMcpServers` in `agentHostLocalCustomizations.ts`, and `agentHostMcpServerSupport.ts`). A `cwd`, a `version` or an env file makes a forwarded definition only partially supported, so the extension sets none of them.
+- **No duplicates.** `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json`) is read by:
+  - Copilot CLI;
+  - the Copilot runtime in the Agents window;
+  - VS Code itself, when the `copilot` source of `chat.mcp.discovery.enabled` is on. It is on by default in builds that have that source (`mcpConfiguration.ts`).
+
+  When that file defines a `yesterprompt` server and this VS Code reads the file, the extension's provider returns nothing. The extension checks this the way VS Code does (`copilotMcpConfig.ts`):
+  - the same path, independent of `yesterprompt.sources.copilotHome`;
+  - the same `isDiscoverySourceEnabled` rules;
+  - builds whose default discovery value has no `copilot` source never step aside.
+
+  It checks again when the file or the settings change. Known gap: VS Code delivers Copilot-home servers only to Copilot sessions in the Agents window (`agentHostMcpServerSupport.ts`), so in that setup other agent providers there don't get the tools. A second copy would duplicate the tools for the common case instead.
+- **Privacy.** Tool results are sent to the agent's model. Registration can be turned off with `yesterprompt.mcp.enabled`, and the server's instructions ask agents to quote only what the task needs.
+- **Reviewed.** An independent review of this change found two issues: the step-aside check used a different path and different discovery rules from VS Code, and a `yester mcp` refresh used default source settings. Both were fixed as described above, with regression tests.
+
 ## Review log
 
 The Explorer plan was critiqued by three independent reviewers (a neutral reviewer, Claude Opus 5.5 and GPT-6 Astra) before implementation. Changes they drove:
@@ -165,8 +199,6 @@ The Explorer plan was critiqued by three independent reviewers (a neutral review
 
 ## Roadmap
 
-- **MCP server** (`packages/mcp`). A stdio server over `PromptSearchEngine` with tools `search_prompts(query, limit, filters)`, `get_prompt(id)` and `get_session_prompts(sessionKey)`. It shares the index with the extension. The core API is already transport-neutral and JSON-serializable.
-- **Language-model tool** `#pastPrompts` (`vscode.lm.registerTool`), so agents in VS Code can recall earlier prompts.
 - **Optional cross-encoder rerank** ("Refine"). mxbai-rerank-xsmall helped hard queries but costs ~6 s per query.
 - **Near-duplicate clustering** with MinHash. Only 21 clusters in the current corpus, so it was deferred.
 - **More platforms.** macOS and Linux VSIX targets via `scripts/package.mjs --target`. A WASM fallback provider would cover platforms without onnxruntime binaries.

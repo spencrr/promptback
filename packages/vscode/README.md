@@ -63,6 +63,13 @@ Combine free text with filters, for example `tree view design doc repo:PyRIT aft
 | `sort:recent` | Newest first instead of by relevance |
 | `is:ack` | Include trivial replies such as "continue" or "yes" |
 
+### Agent tools (MCP)
+
+The extension registers an MCP server, so chat agents in VS Code, including Agents-window sessions, can search your prompt history themselves. Ask things like "find what I asked about the retry policy last month and reuse it". The tools are `search_prompts`, `get_prompt`, `get_session`, `list_recent_sessions` and `index_status`. All are read-only, so VS Code runs them without a confirmation prompt.
+
+- Turn it off with `yesterprompt.mcp.enabled`.
+- Copilot CLI in a terminal can run the same server as `yester mcp` (see the [repository README](https://github.com/spencrr/yesterprompt#mcp-server)). If Copilot CLI's `mcp-config.json` defines a `yesterprompt` server and VS Code reads that file (`chat.mcp.discovery.enabled`, on by default in current versions), VS Code uses that entry and the extension doesn't register a second copy.
+
 ### Opening a session
 
 - **Agents window sessions** open through `vscode://agents/agent-host-session/copilotcli/<id>`.
@@ -80,12 +87,14 @@ There, the Explorer opens as a full-area tab and adapts to the narrower pane (fi
 - **Read-only access.** Session files are only ever read. The index (`index.db`) is a separate SQLite file in `~/.yesterprompt` (override with `YESTERPROMPT_HOME` or `yesterprompt.index.directory`). Delete that folder to forget everything.
 - **Model downloads.** The default model ships inside the extension. If you pick another local model, only model files are downloaded, from a pinned Hugging Face revision verified by SHA-256. Set `yesterprompt.embedding.allowDownload` to `false` to forbid downloads.
 - **Remote embeddings.** `yesterprompt.embedding.provider: "openai-compatible"` sends prompt text to the configured endpoint. Only use it with endpoints you trust, such as Azure OpenAI in your tenant or local Ollama.
+- **Agent tools.** When an agent calls the MCP tools, the prompts they return become part of that agent's context and are sent to its model, which may be a different model or project than the one they were written for. Set `yesterprompt.mcp.enabled` to `false` to keep agents out.
 
 ## Settings
 
 | Setting | Default | |
 |---|---|---|
 | `yesterprompt.defaultAction` | `copy` | What Enter does: `copy`, `insert`, `preview`, `open` |
+| `yesterprompt.mcp.enabled` | `true` | Offer the MCP tools to chat agents (including the Agents window) |
 | `yesterprompt.embedding.provider` | `local` | `local`, `openai-compatible`, `none` |
 | `yesterprompt.embedding.model` | `bge-small-en-v1.5` | Or `all-MiniLM-L6-v2` (faster to index, lower quality) |
 | `yesterprompt.embedding.threads` | `4` | CPU threads for local embedding |
