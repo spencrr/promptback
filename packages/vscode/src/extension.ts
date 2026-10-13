@@ -39,7 +39,7 @@ export function activate(context: vscode.ExtensionContext): YesterpromptApi {
 	registerStatusItem(context, host, log);
 	registerSidebar(context, host, explorer);
 	registerCommands(context, host, log, explorer);
-	registerMcpServer(context, () => buildOptions(context));
+	registerMcpServer(context, log, () => buildOptions(context));
 	void offerAgentsWindow(context);
 
 	const ready = async () => {

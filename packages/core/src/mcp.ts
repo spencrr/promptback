@@ -1,8 +1,8 @@
 /**
  * MCP server over the prompt index, for VS Code chat, the Agents window, Copilot CLI and other MCP clients.
- * Stdio transport; every tool is read-only. Clients may start one server per session, so an idle server does
- * no work: the index is refreshed (with a bounded wait) when a tool is called, and the embedding model loads
- * only for queries that need it and is released when idle.
+ * Stdio transport; every tool is read-only. Clients start one server per session and keep it for the session's
+ * lifetime, so an idle server holds as little as possible: the index is refreshed (with a bounded wait) when a tool is
+ * called, the embedding model loads only for queries that need it, and the model and corpus are released when idle.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -11,6 +11,7 @@ import * as z from 'zod/v4';
 import { type EngineOptions, PromptSearchEngine } from './engine.js';
 import { sessionOpenTargets } from './links.js';
 import type { PromptOrigin, SearchHit, SessionInfo } from './types.js';
+import { collectGarbage } from './util/gc.js';
 
 const SNIPPET_CHARS = 300;
 const PROMPT_MAX_CHARS = 20_000;
@@ -19,7 +20,7 @@ const SESSION_HEAD = 20;
 const SESSION_TAIL = 80;
 const REFRESH_AFTER_MS = 30_000;
 const REFRESH_WAIT_MS = 2_000;
-const MODEL_IDLE_MS = 5 * 60_000;
+const IDLE_RELEASE_MS = 5 * 60_000;
 
 const INSTRUCTIONS = `Yesterprompt indexes the prompts this user has sent to AI coding agents (Copilot CLI, the VS Code Agents window, VS Code Chat) across all sessions and repositories.
 Use search_prompts to find something the user asked or decided before, to reuse an earlier prompt, or to recover the context of past work. Then use get_prompt or get_session with the ids it returns.
@@ -200,7 +201,7 @@ export async function serveMcp(opts: Omit<EngineOptions, 'log' | 'embeddingProvi
 		await Promise.race([run, new Promise(r => setTimeout(r, REFRESH_WAIT_MS).unref())]);
 	};
 	const server = createMcpServer(engine, { version, refresh });
-	const idle = setInterval(() => void engine.releaseProviderIfIdle(MODEL_IDLE_MS), 60_000).unref();
+	const idle = setInterval(() => void engine.releaseIfIdle(IDLE_RELEASE_MS).then(freed => freed && collectGarbage()), 60_000).unref();
 
 	let closed = false;
 	const shutdown = async () => {

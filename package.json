@@ -1,7 +1,7 @@
 {
   "name": "yesterprompt-monorepo",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Semantic search over every prompt you've sent to your AI coding agents. Local-first.",
   "type": "module",
   "workspaces": [

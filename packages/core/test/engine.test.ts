@@ -189,6 +189,21 @@ describe('PromptSearchEngine', () => {
 		expect((await cli.search('retry_policy')).hits).toHaveLength(1);
 	});
 
+	it('loads the model only for queries that need it and frees memory when idle', async () => {
+		const engine = open(new FakeEmbedder());
+		await engine.sync({ embed: false });
+		await engine.search('retry_policy mode:lex');
+		await engine.search('');
+		await engine.explore('');
+		await engine.explore('tree view mode:lex');
+		expect(engine.modelLoaded).toBe(false);
+		await engine.search('tree view');
+		expect(engine.modelLoaded).toBe(true);
+		expect(await engine.releaseIfIdle(60_000)).toBe(false);
+		expect(await engine.releaseIfIdle(0)).toBe(true);
+		expect((await engine.search('retry_policy mode:lex')).hits).toHaveLength(1);
+	});
+
 	it('lets only one process index at a time', async () => {
 		const a = open(new FakeEmbedder());
 		const b = open(new FakeEmbedder());

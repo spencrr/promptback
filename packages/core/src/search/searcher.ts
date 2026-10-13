@@ -18,6 +18,15 @@ const TOPIC_CANDIDATES = 150;
 /** Words that appear in many prompts' paths and say nothing about the topic. */
 const USER_WORDS = [os.userInfo().username.toLowerCase()];
 
+/** Whether a query uses semantic retrieval (and so the embedding model): it has free text and isn't keyword-only. */
+export function wantsDense(text: string, requestedMode?: SearchMode): boolean {
+	return isDense(parseQuery(text), requestedMode);
+}
+
+function isDense(parsed: ParsedQuery, requestedMode: SearchMode | undefined): boolean {
+	return (parsed.mode ?? requestedMode ?? 'hybrid') !== 'lexical' && parsed.freeText.length > 0;
+}
+
 interface Ranked {
 	readonly corpus: Corpus;
 	readonly parsed: ParsedQuery;
@@ -218,7 +227,7 @@ export class Searcher {
 
 		const provider = this.provider();
 		const denseReady = !!provider && !!corpus.matrix?.count;
-		const wantDense = mode !== 'lexical' && parsed.freeText.length > 0;
+		const wantDense = isDense(parsed, requestedMode);
 		const hasLexical = parsed.terms.length > 0 || parsed.phrases.length > 0;
 		const base = { corpus, parsed, filters, mode, semanticUnavailable: wantDense && !denseReady };
 

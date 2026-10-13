@@ -38,7 +38,7 @@ yester status
 # VS Code extension (platform-specific VSIX with bundled model)
 cd packages/vscode
 node scripts/package.mjs --target win32-x64
-code --install-extension yesterprompt-0.5.0-win32-x64.vsix
+code --install-extension yesterprompt-0.5.1-win32-x64.vsix
 node test/integration/runTest.mjs            # runs the extension in an isolated VS Code instance against your real history (read-only)
 ```
 
@@ -73,9 +73,9 @@ Agents get five read-only tools:
   }
   ```
 
-  VS Code reads this file too when its Copilot CLI discovery is on (`chat.mcp.discovery.enabled`, on by default in current versions). In that case the extension doesn't register a second copy, and VS Code chat and the Agents window use this entry.
+  When this file defines `yesterprompt`, the extension stops registering its own copy. The Copilot runtime behind Agents-window sessions reads this file itself, and VS Code forwards extension servers to every agent session, so a second copy would give each session the tools twice. VS Code's own chat panel reads the file only when `chat.mcp.discovery.enabled` has `copilot` on, which is off by default in VS Code 1.141. To use the tools there, turn that on (it also brings in your other Copilot CLI servers) or remove the entry.
 
-Each client starts its own server process. An idle server does no work. When a tool is called it picks up new prompts (waiting at most 2 s), and it loads the embedding model only for queries that need it. Measured with Node 26 on Windows: about 85 MB idle and 200 MB with the model loaded. The model is released after 5 idle minutes.
+Each agent session starts its own server and keeps it for the session's lifetime, so an idle server holds as little as possible. It picks up new prompts when a tool is called (waiting at most 2 s) and loads the embedding model only for queries that need semantic search; keyword-only and empty queries never load it. After 5 idle minutes it releases the model and its prompt cache. Private memory, measured with Node 26 on Windows: 33 MB idle (Node alone is 19 MB), 148 MB right after a semantic search, 56 MB once released.
 
 Tool results reach the agent's model like any other context, so a past prompt can end up in a different project or model than the one it was written for.
 

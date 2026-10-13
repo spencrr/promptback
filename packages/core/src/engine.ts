@@ -8,7 +8,7 @@ import type { EmbeddingConfig, EmbeddingProvider } from './embed/provider.js';
 import { copilotHome as defaultCopilotHome, defaultIndexDir, vscodeUserDataRoots } from './paths.js';
 import { type ChunkOptions, DEFAULT_CHUNK_OPTIONS, chunkText } from './search/chunk.js';
 import { CorpusCache } from './search/corpus.js';
-import { DEFAULT_RANKING, type RankingOptions, Searcher } from './search/searcher.js';
+import { DEFAULT_RANKING, type RankingOptions, Searcher, wantsDense } from './search/searcher.js';
 import { type AgentHostDbState, listAgentHostDbs, readAgentHostDb } from './sources/agentHost.js';
 import { type CopilotFileState, copilotSessionKey, listCopilotSessions, readCopilotEvents, readCopilotSessionInfo } from './sources/copilot.js';
 import { listChatSessionFiles, readChatSession } from './sources/vscodeChat.js';
@@ -143,12 +143,16 @@ export class PromptSearchEngine {
 		return this.providerPromise;
 	}
 
-	/** Frees the model after a period without use; it is reloaded on demand. */
-	async releaseProviderIfIdle(idleMs: number): Promise<boolean> {
-		if (!this.provider || this.opts.embeddingProvider || this.syncing || Date.now() - this.lastUse < idleMs) {
+	/** Frees the model and the in-memory corpus after a period without use; both are reloaded on demand. */
+	async releaseIfIdle(idleMs: number): Promise<boolean> {
+		if (this.syncing) {
 			return false;
 		}
+		const corpusReleased = this.corpus.releaseIfIdle(idleMs);
 		const p = this.provider;
+		if (!p || this.opts.embeddingProvider || Date.now() - this.lastUse < idleMs) {
+			return corpusReleased;
+		}
 		this.provider = undefined;
 		await p.dispose();
 		this.log('Released embedding model (idle)');
@@ -444,8 +448,9 @@ export class PromptSearchEngine {
 
 	/** Quick search (top hits, collapsed, capped per session). Waits ≤ 3 s for a cold model, then falls back to keywords. */
 	async search(query: SearchQuery | string): Promise<SearchResult> {
-		const wantsDense = typeof query === 'string' || query.mode !== 'lexical';
-		if (wantsDense) {
+		const q = typeof query === 'string' ? { text: query } : query;
+		// Keyword-only and browse queries never load the model (~100 MB).
+		if (wantsDense(q.text, q.mode)) {
 			await this.warm(3000);
 		}
 		this.lastUse = Date.now();
@@ -454,7 +459,7 @@ export class PromptSearchEngine {
 
 	/** Every matching prompt occurrence for the Explorer (an empty query lists everything, newest first). */
 	async explore(query: string): Promise<ExploreResult> {
-		if (query.trim()) {
+		if (wantsDense(query)) {
 			await this.warm(3000);
 		}
 		this.lastUse = Date.now();

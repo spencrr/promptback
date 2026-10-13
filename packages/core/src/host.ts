@@ -4,6 +4,7 @@
  */
 import { PromptSearchEngine } from './engine.js';
 import type { HostEvent, HostInitOptions, HostRequest, HostResponse } from './protocol.js';
+import { collectGarbage } from './util/gc.js';
 
 let engine: PromptSearchEngine | undefined;
 let lastSync = 0;
@@ -49,7 +50,7 @@ function init(opts: HostInitOptions) {
 	}
 	const idle = opts.idleReleaseMs ?? 15 * 60_000;
 	if (idle > 0) {
-		timers.push(setInterval(() => void engine?.releaseProviderIfIdle(idle), 60_000));
+		timers.push(setInterval(() => void engine?.releaseIfIdle(idle).then(freed => freed && collectGarbage()), 60_000));
 	}
 	setTimeout(backgroundSync, 0);
 	return { indexDir: engine.indexDir };

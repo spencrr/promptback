@@ -1,6 +1,6 @@
 {
   "name": "@yesterprompt/cli",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Yesterprompt from the terminal: index, search and inspect your prompt history.",
   "type": "module",

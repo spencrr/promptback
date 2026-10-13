@@ -165,25 +165,33 @@ Design points:
   - `get_prompt`, `list_recent_sessions` and `index_status` complete the set.
   - Output is plain text written for a model. Every hit carries the ids the next call needs, and cut text names the call that returns it in full.
 - **Read-only.** Every tool sets `readOnlyHint: true` and `openWorldHint: false`. In `mcpLanguageModelToolContribution.ts`, VS Code skips the "Run tool" confirmation for read-only MCP tools, and asks the user to review results only for open-world ones.
-- **Lazy.** Clients start one server per session, so an idle server does nothing.
-  - When a tool is called, the server runs an incremental sync, at most once every 30 s, and waits for it at most 2 s.
-  - It embeds new prompts only after a query has already loaded the model, and releases the model after 5 idle minutes.
-  - Measured under Node: about 85 MB idle and 200 MB with the model; Electron's runtime adds about 60 MB. The first search takes 1.4 s, later ones a few milliseconds.
+- **Lean when idle.** Agent clients start one server per session and keep it for the session's lifetime. On the development machine, 12 were running by late afternoon. So an idle server must hold as little as possible.
+  - When a tool is called, the server runs an incremental sync, at most once every 30 s, and waits for it at most 2 s. It embeds new prompts only after a query has already loaded the model.
+  - The model loads only for queries that need semantic search (`wantsDense` in `searcher.ts`). Keyword-only (`mode:lex`) and empty queries never load it; before this rule they loaded it too, adding about 100 MB.
+  - After 5 idle minutes the server releases the model and the in-memory corpus, then forces a garbage collection (`util/gc.ts`). An idle process allocates nothing, so without that collection V8 kept the freed memory indefinitely.
+  - Private memory, measured with Node 26 on Windows:
+
+    | State | Private memory |
+    |---|---|
+    | Bare Node | 19 MB |
+    | Idle server | 33 MB |
+    | Right after a semantic search | 148 MB |
+    | Released | 56 MB |
+
+    ONNX Runtime keeps about 20 MB of native state once loaded. A Node MCP server can't go much lower: the SDK and zod alone, unbundled, take 40 MB. The first search takes 1.4 s; later ones take a few milliseconds.
   - Writes take the same single-writer lease as every other process.
 - **Agents window.** VS Code forwards MCP servers to agent-host sessions under the definition's label, including servers that extensions contribute (`collectNonPluginMcpServers` in `agentHostLocalCustomizations.ts`, and `agentHostMcpServerSupport.ts`). A `cwd`, a `version` or an env file makes a forwarded definition only partially supported, so the extension sets none of them.
-- **No duplicates.** `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json`) is read by:
-  - Copilot CLI;
-  - the Copilot runtime in the Agents window;
-  - VS Code itself, when the `copilot` source of `chat.mcp.discovery.enabled` is on. It is on by default in builds that have that source (`mcpConfiguration.ts`).
-
-  When that file defines a `yesterprompt` server and this VS Code reads the file, the extension's provider returns nothing. The extension checks this the way VS Code does (`copilotMcpConfig.ts`):
-  - the same path, independent of `yesterprompt.sources.copilotHome`;
-  - the same `isDiscoverySourceEnabled` rules;
-  - builds whose default discovery value has no `copilot` source never step aside.
-
-  It checks again when the file or the settings change. Known gap: VS Code delivers Copilot-home servers only to Copilot sessions in the Agents window (`agentHostMcpServerSupport.ts`), so in that setup other agent providers there don't get the tools. A second copy would duplicate the tools for the common case instead.
+- **One copy per session.** `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json`) is always read by Copilot CLI and by the Copilot runtime behind Agents-window sessions. VS Code's own chat reads it only when the `copilot` source of `chat.mcp.discovery.enabled` is on. That source is off by default in VS Code 1.141 (checked in its extension host) and on in later source (`mcpConfiguration.ts`).
+  - VS Code forwards extension servers to every agent-host session it starts, and an extension can't target session types. The only server VS Code ever withholds is Copilot Chat's built-in GitHub server (`isProviderBuiltInReplacement` in `agentHostMcpServerSupport.ts`).
+  - So whenever that file defines `yesterprompt`, the extension registers nothing, whatever the discovery setting, and logs why (`mcpProvider.ts`). It checks again when the file or its settings change.
+  - Cost of this rule:
+    - With VS Code 1.141's defaults, VS Code's own chat panel then has no Yesterprompt tools. Turning on `copilot` discovery restores them, and also brings in the file's other servers.
+    - Claude and Codex sessions in the Agents window never receive Copilot-home servers (`CopilotHomeNotForwarded`), so they lose the tools as well.
+  - VS Code caches extension server definitions per workspace (`mcp.extCachedServers` in `extensionMcpDiscovery.ts`) and forwards the cached copy until the extension's provider replaces it. After an upgrade that changes the provider's answer, windows need a reload.
 - **Privacy.** Tool results are sent to the agent's model. Registration can be turned off with `yesterprompt.mcp.enabled`, and the server's instructions ask agents to quote only what the task needs.
-- **Reviewed.** An independent review of this change found two issues: the step-aside check used a different path and different discovery rules from VS Code, and a `yester mcp` refresh used default source settings. Both were fixed as described above, with regression tests.
+- **Reviewed, then corrected.** An independent review found two issues.
+  - A `yester mcp` refresh used default source settings, so it could delete sessions the extension keeps. The index now owns its source settings.
+  - The step-aside check didn't follow VS Code's discovery rules. Making it follow them was still wrong: the Copilot runtime reads the file regardless, so Agents-window sessions kept getting the tools twice. A probe of VS Code 1.141's extension host showed the real defaults, and the rule is now the plain one above.
 
 ## Review log
 

@@ -68,7 +68,7 @@ Combine free text with filters, for example `tree view design doc repo:PyRIT aft
 The extension registers an MCP server, so chat agents in VS Code, including Agents-window sessions, can search your prompt history themselves. Ask things like "find what I asked about the retry policy last month and reuse it". The tools are `search_prompts`, `get_prompt`, `get_session`, `list_recent_sessions` and `index_status`. All are read-only, so VS Code runs them without a confirmation prompt.
 
 - Turn it off with `yesterprompt.mcp.enabled`.
-- Copilot CLI in a terminal can run the same server as `yester mcp` (see the [repository README](https://github.com/spencrr/yesterprompt#mcp-server)). If Copilot CLI's `mcp-config.json` defines a `yesterprompt` server and VS Code reads that file (`chat.mcp.discovery.enabled`, on by default in current versions), VS Code uses that entry and the extension doesn't register a second copy.
+- Copilot CLI in a terminal can run the same server as `yester mcp` (see the [repository README](https://github.com/spencrr/yesterprompt#mcp-server)). If Copilot CLI's `mcp-config.json` defines a `yesterprompt` server, the extension doesn't register its own copy, because Copilot sessions load that entry themselves. VS Code's own chat panel reads that file only when `chat.mcp.discovery.enabled` has `copilot` on (off by default in VS Code 1.141).
 
 ### Opening a session
 

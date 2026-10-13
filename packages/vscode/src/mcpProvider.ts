@@ -3,21 +3,28 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { HostInitOptions } from '@yesterprompt/core';
-import { definesServer, vscodeLoadsCopilotConfig } from './copilotMcpConfig.js';
+import { definesServer } from './copilotMcpConfig.js';
 
 const SERVER_NAME = 'yesterprompt';
-const DISCOVERY_SETTING = 'chat.mcp.discovery.enabled';
 
 /**
- * Offers the MCP server to chat in this window; VS Code also forwards it to Agents-window sessions.
- * It is not offered when VS Code itself loads a `yesterprompt` server from Copilot CLI's `mcp-config.json`
- * (set up for Copilot CLI), so the tools don't appear twice.
+ * Offers the MCP server to chat in this window. VS Code also forwards it to agent-host sessions (the Agents window)
+ * without distinguishing session types, and the Copilot runtime behind those sessions loads Copilot CLI's
+ * `mcp-config.json` itself. So while that file defines a `yesterprompt` server, offering ours too would give every
+ * Copilot session the tools twice: the extension steps aside, whatever `chat.mcp.discovery.enabled` says.
  */
-export function registerMcpServer(context: vscode.ExtensionContext, options: () => HostInitOptions): void {
-	// The file VS Code reads (`getCopilotGlobalMcpConfigurationResource`); it ignores `yesterprompt.sources.copilotHome`.
+export function registerMcpServer(context: vscode.ExtensionContext, log: vscode.LogOutputChannel, options: () => HostInitOptions): void {
+	// The file Copilot reads (`$COPILOT_HOME`, else `~/.copilot`), independent of `yesterprompt.sources.copilotHome`.
 	const copilotConfig = path.join(process.env['COPILOT_HOME'] || path.join(os.homedir(), '.copilot'), 'mcp-config.json');
 	const changed = new vscode.EventEmitter<void>();
 	const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(path.dirname(copilotConfig)), 'mcp-config.json'));
+	let reported: string | undefined;
+	const report = (message: string) => {
+		if (message !== reported) {
+			reported = message;
+			log.info(message);
+		}
+	};
 	context.subscriptions.push(
 		changed,
 		watcher,
@@ -25,16 +32,22 @@ export function registerMcpServer(context: vscode.ExtensionContext, options: () 
 		watcher.onDidChange(() => changed.fire()),
 		watcher.onDidDelete(() => changed.fire()),
 		vscode.workspace.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('yesterprompt') || e.affectsConfiguration(DISCOVERY_SETTING)) {
+			if (e.affectsConfiguration('yesterprompt')) {
 				changed.fire();
 			}
 		}),
 		vscode.lm.registerMcpServerDefinitionProvider(SERVER_NAME, {
 			onDidChangeMcpServerDefinitions: changed.event,
 			provideMcpServerDefinitions: () => {
-				if (!vscode.workspace.getConfiguration('yesterprompt').get<boolean>('mcp.enabled', true) || loadedFromCopilotConfig(copilotConfig)) {
+				if (!vscode.workspace.getConfiguration('yesterprompt').get<boolean>('mcp.enabled', true)) {
+					report('MCP server: off (yesterprompt.mcp.enabled is false).');
 					return [];
 				}
+				if (definedInCopilotConfig(copilotConfig)) {
+					report(`MCP server: not registered, because ${copilotConfig} defines '${SERVER_NAME}'; Copilot sessions and Copilot CLI use that entry.`);
+					return [];
+				}
+				report('MCP server: registered for chat and agent sessions.');
 				// No cwd or version: the Agents window would forward a definition with either only partially.
 				return [new vscode.McpStdioServerDefinition('Yesterprompt', process.execPath, [context.asAbsolutePath('dist/mcp.js')], {
 					ELECTRON_RUN_AS_NODE: '1',
@@ -46,11 +59,7 @@ export function registerMcpServer(context: vscode.ExtensionContext, options: () 
 	);
 }
 
-function loadedFromCopilotConfig(file: string): boolean {
-	const all = vscode.workspace.getConfiguration();
-	if (!vscodeLoadsCopilotConfig(all.inspect(DISCOVERY_SETTING)?.defaultValue, all.get(DISCOVERY_SETTING))) {
-		return false;
-	}
+function definedInCopilotConfig(file: string): boolean {
 	try {
 		return definesServer(fs.readFileSync(file, 'utf8'), SERVER_NAME);
 	} catch {

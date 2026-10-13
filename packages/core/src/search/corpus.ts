@@ -23,10 +23,21 @@ export interface Corpus {
 
 export class CorpusCache {
 	private current: Corpus | undefined;
+	private lastUsed = 0;
 
 	constructor(private readonly store: Store, private readonly provider: () => EmbeddingProvider | undefined) { }
 
+	/** Drops the snapshot if it hasn't been used for `idleMs`; the next {@link get} rebuilds it. */
+	releaseIfIdle(idleMs: number): boolean {
+		if (!this.current || Date.now() - this.lastUsed < idleMs) {
+			return false;
+		}
+		this.current = undefined;
+		return true;
+	}
+
 	get(): Corpus {
+		this.lastUsed = Date.now();
 		const revision = this.store.getMeta('revision') ?? '0';
 		// Before the model has loaded, use the vectors of the last model that embedded this index (browsing and topics
 		// work immediately; only new query embeddings need the model).

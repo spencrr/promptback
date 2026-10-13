@@ -5,7 +5,7 @@ import type { ExploreResult, IndexStatus, PromptRecord, RecentSession, SearchQue
 export interface HostInitOptions extends Omit<EngineOptions, 'log'> {
 	/** Background re-scan interval (ms); 0 disables. */
 	readonly syncIntervalMs?: number;
-	/** Unload the embedding model after this long without use (ms); 0 disables. */
+	/** Unload the embedding model and the in-memory corpus after this long without use (ms); 0 disables. */
 	readonly idleReleaseMs?: number;
 }
 

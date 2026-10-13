@@ -1,6 +1,6 @@
 {
   "name": "@yesterprompt/core",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Ingestion, indexing, embeddings and hybrid search over local Copilot / VS Code prompt history.",
   "type": "module",
