@@ -115,4 +115,7 @@ console.log('\n== Packaging VSIX');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const out = path.join(root, `${pkg.name}-${pkg.version}-${target}.vsix`);
 run(require.resolve('@vscode/vsce/vsce'), ['package', '--no-dependencies', '--target', target, '--out', out]);
+// The single-platform staging copy must not outlive the VSIX: a development build would resolve it instead of the
+// repo's onnxruntime-node and fail to load the binding on this machine.
+fs.rmSync(nm, { recursive: true, force: true });
 console.log(`\nCreated ${out} (${(fs.statSync(out).size / 1_048_576).toFixed(1)} MB)`);
