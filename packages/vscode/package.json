@@ -248,11 +248,13 @@
             "enum": [
               "local",
               "openai-compatible",
+              "hashed",
               "none"
             ],
             "enumDescriptions": [
               "Local ONNX model — prompts never leave this machine",
               "Any OpenAI-compatible /embeddings endpoint (Azure OpenAI, Foundry, Ollama, LM Studio). Remote endpoints receive your prompt text.",
+              "Hashed word vectors: no model or download, works on every platform, finds fewer paraphrases",
               "Keyword search only"
             ],
             "default": "local",

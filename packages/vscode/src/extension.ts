@@ -287,28 +287,28 @@ async function offerAgentsWindow(context: vscode.ExtensionContext): Promise<void
 		await enableInAgentsWindow();
 	}
 }
+/**
+ * Settings that belong to one embedding provider, by provider id. A provider without an entry (a third-party plugin,
+ * or `none` and `hashed`) runs with its schema defaults.
+ */
+const PROVIDER_SETTINGS: Record<string, (c: vscode.WorkspaceConfiguration) => Record<string, unknown>> = {
+	local: c => ({
+		model: c.get<string>('embedding.model', 'bge-small-en-v1.5'),
+		modelDir: c.get<string>('embedding.modelDir') || undefined,
+		threads: c.get<number>('embedding.threads', 4),
+	}),
+	'openai-compatible': c => ({
+		baseUrl: c.get<string>('embedding.openai.baseUrl', ''),
+		model: c.get<string>('embedding.openai.model', 'text-embedding-3-small'),
+		apiKeyEnv: c.get<string>('embedding.openai.apiKeyEnv') || undefined,
+		dims: c.get<number>('embedding.openai.dimensions') || undefined,
+	}),
+};
+
 function buildOptions(context: vscode.ExtensionContext): HostInitOptions {
 	const c = vscode.workspace.getConfiguration('promptback');
 	const provider = c.get<string>('embedding.provider', 'local');
-	let embedding: EmbeddingConfig;
-	if (provider === 'none') {
-		embedding = { kind: 'none' };
-	} else if (provider === 'openai-compatible') {
-		embedding = {
-			kind: 'openai-compatible',
-			baseUrl: c.get<string>('embedding.openai.baseUrl', ''),
-			model: c.get<string>('embedding.openai.model', 'text-embedding-3-small'),
-			apiKeyEnv: c.get<string>('embedding.openai.apiKeyEnv') || undefined,
-			dims: c.get<number>('embedding.openai.dimensions') || undefined,
-		};
-	} else {
-		embedding = {
-			kind: 'local',
-			model: c.get<string>('embedding.model', 'bge-small-en-v1.5'),
-			modelDir: c.get<string>('embedding.modelDir') || undefined,
-			threads: c.get<number>('embedding.threads', 4),
-		};
-	}
+	const embedding: EmbeddingConfig = { kind: provider, ...PROVIDER_SETTINGS[provider]?.(c) };
 	return {
 		indexDir: c.get<string>('index.directory') || undefined,
 		sources: sourceOptionsFromSettings(c),

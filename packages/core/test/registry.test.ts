@@ -47,7 +47,7 @@ describe('Registry', () => {
 
 describe('embedding provider registry', () => {
 	it('knows the built-ins and validates their options', async () => {
-		expect(embeddingProviders.ids()).toEqual(['local', 'openai-compatible', 'none']);
+		expect(embeddingProviders.ids()).toEqual(['local', 'openai-compatible', 'hashed', 'none']);
 		expect(
 			await createEmbeddingProvider({ kind: 'none' }, { cacheDir: 'x', allowDownload: false }),
 		).toBeUndefined();

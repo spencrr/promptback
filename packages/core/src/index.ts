@@ -1,3 +1,4 @@
+export { HashedEmbeddingProvider } from './embed/hashed.js';
 export { downloadModel, resolveModelDir } from './embed/modelStore.js';
 export {
 	DEFAULT_LOCAL_MODEL,
@@ -16,6 +17,7 @@ export {
 	type EmbeddingConfig,
 	type EmbeddingProviderPlugin,
 	embeddingProviders,
+	hashedProvider,
 	localProvider,
 	NO_EMBEDDING,
 	noneProvider,

@@ -1,5 +1,6 @@
 import * as z from 'zod/v4';
 import { type ConfigurablePlugin, parseOptions, Registry } from '../registry.js';
+import { HashedEmbeddingProvider } from './hashed.js';
 import { resolveModelDir } from './modelStore.js';
 import { DEFAULT_LOCAL_MODEL, getModelSpec, loadModelManifest } from './models.js';
 import { OnnxEmbeddingProvider } from './onnx.js';
@@ -53,6 +54,11 @@ export const openAICompatibleProviderOptions = z.object({
 });
 
 export const noneProviderOptions = z.object({});
+
+export const hashedProviderOptions = z.object({
+	/** Vector size; more buckets mean fewer collisions and more memory per prompt. */
+	dims: z.number().int().min(32).max(4096).default(256),
+});
 
 export const localProvider: EmbeddingProviderPlugin<z.infer<typeof localProviderOptions>> = {
 	id: 'local',
@@ -108,10 +114,20 @@ export const noneProvider: EmbeddingProviderPlugin<z.infer<typeof noneProviderOp
 	create: () => Promise.resolve(undefined),
 };
 
+export const hashedProvider: EmbeddingProviderPlugin<z.infer<typeof hashedProviderOptions>> = {
+	id: 'hashed',
+	label: 'Hashed words (no model)',
+	description: 'Word-overlap vectors with no model or native code; works everywhere, finds fewer paraphrases.',
+	local: true,
+	options: hashedProviderOptions,
+	create: o => Promise.resolve(new HashedEmbeddingProvider(o.dims)),
+};
+
 /** The embedding backends an engine can use. Register another plugin before opening an engine to add one. */
 export const embeddingProviders = new Registry<EmbeddingProviderPlugin>('embedding provider', [
 	localProvider,
 	openAICompatibleProvider,
+	hashedProvider,
 	noneProvider,
 ]);
 
@@ -119,6 +135,7 @@ export const embeddingProviders = new Registry<EmbeddingProviderPlugin>('embeddi
 export type EmbeddingConfig =
 	| ({ readonly kind: 'local' } & Partial<z.input<typeof localProviderOptions>>)
 	| ({ readonly kind: 'openai-compatible' } & z.input<typeof openAICompatibleProviderOptions>)
+	| ({ readonly kind: 'hashed' } & Partial<z.input<typeof hashedProviderOptions>>)
 	| { readonly kind: 'none' }
 	| { readonly kind: string; readonly [option: string]: unknown };
 
