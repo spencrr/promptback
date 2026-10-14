@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer run on the same branch supersedes an older one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # onnxruntime-node's postinstall would download CUDA binaries on linux-x64 with npm < 11.19 (newer npm blocks
+  # install scripts unless package.json allows them, which it does not). The CPU binaries ship in the package.
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  lint:
+    name: Lint and typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  build:
+    name: Build artifacts
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Pack the CLI
+        run: |
+          mkdir -p artifacts
+          npm pack -w packages/cli --pack-destination artifacts
+      - name: Package the extension for every supported platform
+        # onnxruntime-node ships binaries for all of these inside one npm package, so one runner builds them all.
+        run: |
+          for target in win32-x64 win32-arm64 linux-x64 linux-arm64 darwin-arm64; do
+            node packages/vscode/scripts/package.mjs --target "$target"
+          done
+          mv packages/vscode/*.vsix artifacts/
+      - name: Inspect artifact metadata
+        run: |
+          ls -la artifacts
+          tar -xOf artifacts/promptback-*.tgz package/package.json | node -e 'const p=JSON.parse(require("fs").readFileSync(0,"utf8")); console.log(p.name, p.version, p.license, JSON.stringify(p.bin), p.mcpName)'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: promptback-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14

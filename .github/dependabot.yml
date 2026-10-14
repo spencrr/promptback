@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-tooling:
+        patterns: ["@biomejs/*", "vitest", "typescript", "esbuild", "@types/*", "@vscode/*"]
+    ignore:
+      # onnxruntime-node is pinned exactly: a bump changes the shipped native binaries and must be re-verified.
+      - dependency-name: onnxruntime-node
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
