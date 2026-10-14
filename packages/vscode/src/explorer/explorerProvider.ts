@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
-import { sessionOpenTargets } from '@yesterprompt/core/links';
+import { embeddingProviders, localModels, sourceCatalog } from '@promptback/core';
+import { sessionOpenTargets } from '@promptback/core/links';
 import { copyPrompt, insertIntoChat, openSession, previewPrompt } from '../actions.js';
 import type { HostClient } from '../hostClient.js';
-import type { FromWebview, IndexAction, IndexSettings, OpenRequest, ToWebview } from './messages.js';
+import type { FromWebview, IndexAction, IndexChoices, IndexSettings, OpenRequest, ToWebview } from './messages.js';
 
-export const EXPLORER_VIEW_TYPE = 'yesterprompt.explorer';
-const SCHEME = 'yesterprompt';
+export const EXPLORER_VIEW_TYPE = 'promptback.explorer';
+const SCHEME = 'promptback';
 /**
  * A virtual resource for the Explorer. It has no file extension so VS Code doesn't offer "Configure default editor
  * for '*.x'". It is a custom editor (not a plain webview panel) because in the Agents window only custom editors on a
@@ -68,7 +69,7 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 			}),
 			host.onProgress(progress => provider.postToAll({ type: 'progress', progress })),
 			vscode.workspace.onDidChangeConfiguration(e => {
-				if (e.affectsConfiguration('yesterprompt')) {
+				if (e.affectsConfiguration('promptback')) {
 					// The index process restarts on these settings; give it a moment before reporting.
 					setTimeout(() => void provider.postStatusToAll(), 1500);
 				}
@@ -89,10 +90,11 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 
 	private async statusMessage(): Promise<ToWebview> {
 		const settings = readSettings();
+		const choices = indexChoices();
 		try {
-			return { type: 'indexStatus', status: await this.host.request('status', undefined as never), settings };
+			return { type: 'indexStatus', status: await this.host.request('status', undefined as never), settings, choices };
 		} catch (e) {
-			return { type: 'indexStatus', settings, error: e instanceof Error ? e.message : String(e) };
+			return { type: 'indexStatus', settings, choices, error: e instanceof Error ? e.message : String(e) };
 		}
 	}
 
@@ -119,7 +121,7 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 			switch (msg.type) {
 				case 'ready': {
 					const reducedMotion = vscode.workspace.getConfiguration('workbench').get<string>('reduceMotion') === 'on';
-					post({ type: 'init', reducedMotion, ...this.pending });
+					post({ type: 'init', reducedMotion, catalog: sourceCatalog(), ...this.pending });
 					this.pending = undefined;
 					void this.host.request('warm', undefined as never).catch(() => undefined);
 					return;
@@ -199,7 +201,7 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 				await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${this.context.extension.id}`);
 				return;
 			case 'showLog':
-				await vscode.commands.executeCommand('yesterprompt.showLog');
+				await vscode.commands.executeCommand('promptback.showLog');
 				return;
 			case 'revealIndex': {
 				const status = await this.host.request('status', undefined as never).catch(() => undefined);
@@ -240,8 +242,20 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 	}
 }
 
+/** The registered embedding providers and local models, so the panel never hard-codes them. */
+function indexChoices(): IndexChoices {
+	return {
+		providers: embeddingProviders.list().map(p => ({ id: p.id, label: p.label, description: p.description, local: p.local })),
+		models: localModels.list().map(m => ({
+			id: m.id,
+			label: m.displayName,
+			detail: `${m.dims}d · ${m.maxTokens} tokens · ${m.license}${m.repo ? ` · ${m.repo}` : ''}`,
+		})),
+	};
+}
+
 function readSettings(): IndexSettings {
-	const c = vscode.workspace.getConfiguration('yesterprompt');
+	const c = vscode.workspace.getConfiguration('promptback');
 	const get = <K extends keyof IndexSettings>(k: K) => c.get(SETTING_KEYS[k]) as IndexSettings[K];
 	return {
 		provider: get('provider'), model: get('model'), threads: get('threads'), embedOrigins: get('embedOrigins'),
@@ -262,7 +276,7 @@ async function updateSetting(key: keyof IndexSettings, value: unknown): Promise<
 			return;
 		}
 	}
-	await vscode.workspace.getConfiguration('yesterprompt').update(SETTING_KEYS[key], value, vscode.ConfigurationTarget.Global);
+	await vscode.workspace.getConfiguration('promptback').update(SETTING_KEYS[key], value, vscode.ConfigurationTarget.Global);
 }
 
 /** Backing file system for the Explorer's virtual resource. "Reopen With > Text Editor" can't be hidden, so it explains itself. */

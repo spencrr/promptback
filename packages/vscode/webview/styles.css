@@ -19,10 +19,17 @@ kbd { border: 1px solid var(--vscode-widget-border, #555); border-radius: 3px; p
 	display: grid;
 	grid-template-columns: 240px minmax(0, 1fr) minmax(340px, 36%);
 	grid-template-rows: auto minmax(0, 1fr);
-	grid-template-areas: "top top top" "rail center detail";
+	grid-template-areas:
+		"top top top"
+		"rail center detail";
 	height: 100%;
 }
-.app.no-rail { grid-template-columns: minmax(0, 1fr) minmax(340px, 38%); grid-template-areas: "top top" "center detail"; }
+.app.no-rail {
+	grid-template-columns: minmax(0, 1fr) minmax(340px, 38%);
+	grid-template-areas:
+		"top top"
+		"center detail";
+}
 
 /* ---- top bar ---------------------------------------------------------------------------------------------------- */
 .topbar {
@@ -184,10 +191,9 @@ button .codicon, h2 .codicon, h3 .codicon, .meta .codicon { margin-right: 4px; }
 .pill .codicon, .chip .codicon { font-size: 12px; margin: 0; }
 .chip .text { overflow: hidden; text-overflow: ellipsis; }
 .chip .dot, .group-row .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
-.pill.source-vscodeagenthost { border-color: color-mix(in srgb, var(--vscode-charts-blue, #4fc1ff) 60%, transparent); }
-.pill.source-githubcli { border-color: color-mix(in srgb, var(--vscode-charts-green, #89d185) 60%, transparent); }
-.pill.source-githubautopilot { border-color: color-mix(in srgb, var(--vscode-charts-orange, #d18616) 60%, transparent); }
-.pill.source-vscodechat { border-color: color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 60%, transparent); }
+/* Each client's pill is tinted with the chart colour its source plugin declares (set inline as --pill-color). */
+.pill.source { border-color: color-mix(in srgb, var(--pill-color, var(--vscode-foreground)) 60%, transparent); }
+
 .chip.repo.kind-folder, .chip.repo.kind-none { color: var(--vscode-descriptionForeground); }
 .chip.repo.kind-none { font-style: italic; }
 .chip.repo .tag { margin-left: 2px; line-height: 14px; padding: 0 4px; }
@@ -301,7 +307,11 @@ button .codicon, h2 .codicon, h3 .codicon, .meta .codicon { margin-right: 4px; }
 	.app, .app.no-rail {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto auto minmax(0, 1fr) minmax(170px, 36%);
-		grid-template-areas: "top" "rail" "center" "detail";
+		grid-template-areas:
+			"top"
+			"rail"
+			"center"
+			"detail";
 	}
 	.rail { border-right: none; border-bottom: 1px solid var(--vscode-panel-border); max-height: 150px; display: flex; gap: 18px; overflow-x: auto; }
 	.rail section { min-width: 180px; margin: 0; }

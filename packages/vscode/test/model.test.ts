@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ExploreResult, ExploreRow, Topic } from '@yesterprompt/core/types';
+import type { ExploreResult, ExploreRow, Topic } from '@promptback/core/types';
 import { DEFAULT_VIEW, OTHER_COLOR, PALETTE, buildGraph, categoryColors, computeView, dayLabel, highlightTerms, histogram, repoInfo, segments } from '../webview/model.js';
 
 const DAY = 86_400_000;

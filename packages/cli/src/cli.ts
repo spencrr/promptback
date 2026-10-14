@@ -1,25 +1,25 @@
 #!/usr/bin/env node
 import * as fs from 'node:fs';
 import { parseArgs } from 'node:util';
-import { type EmbeddingConfig, type EngineOptions, LOCAL_MODELS, PromptSearchEngine, type SearchHit, sessionOpenTargets } from '@yesterprompt/core';
-import { serveMcp } from '@yesterprompt/core/mcp';
+import { type EmbeddingConfig, type EngineOptions, LOCAL_MODELS, PromptSearchEngine, type SearchHit, sessionOpenTargets } from '@promptback/core';
+import { serveMcp } from '@promptback/core/mcp';
 
-const HELP = `yester — Yesterprompt: semantic search over every prompt you've sent to your AI coding agents
+const HELP = `promptback — Promptback: semantic search over every prompt you've sent to your AI coding agents
 
 Usage:
-  yester index [--no-embed]             Ingest new prompts and embed them
-  yester search <query...> [--json] [--limit N] [--mode hybrid|semantic|lexical]
-  yester get <promptId>                 Print one prompt (full text)
-  yester status [--json]                Index statistics
-  yester models                         List local embedding models
-  yester mcp                            Run the MCP server on stdio (for Copilot CLI and other agents)
+  promptback index [--no-embed]             Ingest new prompts and embed them
+  promptback search <query...> [--json] [--limit N] [--mode hybrid|semantic|lexical]
+  promptback get <promptId>                 Print one prompt (full text)
+  promptback status [--json]                Index statistics
+  promptback models                         List local embedding models
+  promptback mcp                            Run the MCP server on stdio (for Copilot CLI and other agents)
 
 Query syntax: free text plus repo:, branch:, cwd:, after:, before:, on:, from:(me|agent|skill|system|any),
 src:(cli|vscode), client:(agent-host|cli|autopilot|chat), session:, model:, mode:(lex|sem), sort:recent,
 is:ack, "exact phrase", -excluded
 
 Options:
-  --index-dir <dir>   Index location (default: ~/.yesterprompt, or $YESTERPROMPT_HOME)
+  --index-dir <dir>   Index location (default: ~/.promptback, or $PROMPTBACK_HOME)
   --model <id>        Local embedding model (default bge-small-en-v1.5)
   --no-model          Lexical-only (no embeddings)
   --no-download       Never download a model
@@ -63,7 +63,7 @@ async function main() {
 		indexDir: values['index-dir'],
 		embedding,
 		allowModelDownload: !values['no-download'],
-		log: values.verbose ? m => console.error(`[yester] ${m}`) : undefined,
+		log: values.verbose ? m => console.error(`[promptback] ${m}`) : undefined,
 	};
 	const engine = PromptSearchEngine.open(opts);
 	try {
@@ -102,7 +102,7 @@ async function main() {
 					break;
 				}
 				if (res.semanticUnavailable) {
-					console.error('(semantic search unavailable — showing keyword matches; run `yester index`)');
+					console.error('(semantic search unavailable — showing keyword matches; run `promptback index`)');
 				}
 				res.hits.forEach((h, i) => printHit(h, i + 1));
 				console.error(`${res.hits.length} hits in ${res.tookMs} ms`);

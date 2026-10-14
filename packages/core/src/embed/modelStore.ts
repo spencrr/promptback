@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { type LocalModelSpec, modelFileUrl } from './models.js';
+import { type LocalModelSpec, type ModelFile, modelFileUrl } from './models.js';
 
 export interface ResolveModelOptions {
 	/** Explicit directory with the model files (offline / air-gapped). */
@@ -14,15 +14,17 @@ export interface ResolveModelOptions {
 	/** Hugging Face compatible mirror base URL. */
 	readonly mirror?: string;
 	readonly onProgress?: (message: string) => void;
+	/** Transport for downloads (defaults to the global `fetch`); tests substitute an offline one. */
+	readonly fetch?: typeof fetch;
 }
 
-function fileOk(dir: string, f: LocalModelSpec['files'][number], verifyHash: boolean): boolean {
+function fileOk(dir: string, f: ModelFile, verifyHash: boolean): boolean {
 	const p = path.join(dir, ...f.path.split('/'));
 	try {
 		if (fs.statSync(p).size !== f.size) {
 			return false;
 		}
-		return !verifyHash || sha256File(p) === f.sha256;
+		return !verifyHash || !f.sha256 || sha256File(p) === f.sha256;
 	} catch {
 		return false;
 	}
@@ -62,6 +64,9 @@ export async function resolveModelDir(spec: LocalModelSpec, opts: ResolveModelOp
 		fs.writeFileSync(marker, spec.revision);
 		return dir;
 	}
+	if (!spec.repo) {
+		throw new Error(`Embedding model ${spec.id} is not installed in ${dir} and has no download location.`);
+	}
 	if (!opts.allowDownload) {
 		throw new Error(`Embedding model ${spec.id} is not installed and downloads are disabled.`);
 	}
@@ -70,14 +75,17 @@ export async function resolveModelDir(spec: LocalModelSpec, opts: ResolveModelOp
 	return dir;
 }
 
-export async function downloadModel(spec: LocalModelSpec, dir: string, opts: Pick<ResolveModelOptions, 'mirror' | 'onProgress'>): Promise<void> {
+export async function downloadModel(spec: LocalModelSpec, dir: string, opts: Pick<ResolveModelOptions, 'mirror' | 'onProgress' | 'fetch'>): Promise<void> {
 	const staging = `${dir}.partial-${process.pid}`;
 	fs.rmSync(staging, { recursive: true, force: true });
 	try {
 		for (const f of spec.files) {
+			if (!f.sha256) {
+				throw new Error(`Refusing to download ${f.path} for ${spec.id}: the manifest pins no sha256`);
+			}
 			const url = modelFileUrl(spec, f, opts.mirror);
 			opts.onProgress?.(`Downloading ${spec.repo}/${f.path} (${(f.size / 1048576).toFixed(1)} MB)`);
-			const res = await fetch(url, { redirect: 'follow' });
+			const res = await (opts.fetch ?? fetch)(url, { redirect: 'follow' });
 			if (!res.ok) {
 				throw new Error(`GET ${url} failed: ${res.status} ${res.statusText}`);
 			}

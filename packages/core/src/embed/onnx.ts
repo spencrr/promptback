@@ -20,8 +20,11 @@ export class OnnxEmbeddingProvider implements EmbeddingProvider {
 		private readonly session: Ort.InferenceSession,
 		private readonly tokenizer: Tokenizer,
 	) {
+		// Pinned models are identified by their revision; manifest models by their graph's hash (or size when unpinned).
+		const graph = spec.files.find(f => f.path === spec.modelFile);
+		const identity = spec.revision ? `${spec.repo}@${spec.revision.slice(0, 12)}:q8` : `${spec.id}@${graph?.sha256?.slice(0, 12) ?? `size${graph?.size ?? 0}`}`;
 		this.info = {
-			fingerprint: `onnx:${spec.repo}@${spec.revision.slice(0, 12)}:q8:${spec.pooling}`,
+			fingerprint: `onnx:${identity}:${spec.pooling}`,
 			displayName: spec.displayName,
 			dims: spec.dims,
 			local: true,
@@ -36,7 +39,7 @@ export class OnnxEmbeddingProvider implements EmbeddingProvider {
 			JSON.parse(fs.readFileSync(path.join(modelDir, 'tokenizer.json'), 'utf8')),
 			JSON.parse(fs.readFileSync(path.join(modelDir, 'tokenizer_config.json'), 'utf8')),
 		);
-		const session = await ort.InferenceSession.create(path.join(modelDir, 'onnx', 'model_quantized.onnx'), {
+		const session = await ort.InferenceSession.create(path.join(modelDir, ...spec.modelFile.split('/')), {
 			executionProviders: ['cpu'],
 			intraOpNumThreads: threads,
 			interOpNumThreads: 1,

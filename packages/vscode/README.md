@@ -1,4 +1,4 @@
-# Yesterprompt
+# Promptback
 
 **You've asked this before. Find it.** Semantic search over every prompt you've sent to your AI coding agents, across all sessions:
 
@@ -6,13 +6,13 @@
 - **Copilot CLI** and **autopilot** sessions (`~/.copilot/session-state`)
 - **VS Code Chat panel** history (Stable and Insiders, every workspace)
 
-Everything runs locally. Prompts are embedded on your machine with a small ONNX model (`bge-small-en-v1.5`, bundled), and the index lives in `~/.yesterprompt`, shared by every VS Code window (including the Agents window) and the `yester` CLI. No prompt text leaves the machine unless you explicitly configure a remote embedding endpoint.
+Everything runs locally. Prompts are embedded on your machine with a small ONNX model (`bge-small-en-v1.5`, bundled), and the index lives in `~/.promptback`, shared by every VS Code window (including the Agents window) and the `promptback` CLI. No prompt text leaves the machine unless you explicitly configure a remote embedding endpoint.
 
 ## Usage
 
 ### Prompt Explorer (full screen)
 
-Press **Ctrl+Alt+E** (macOS **Cmd+Ctrl+E**), click **$(history) Prompts** in the status bar, or run **Yesterprompt: Open Prompt Explorer**.
+Press **Ctrl+Alt+E** (macOS **Cmd+Ctrl+E**), click **$(history) Prompts** in the status bar, or run **Promptback: Open Prompt Explorer**.
 
 - **Search bar.** Type words or a description. Results combine keyword and semantic matches; an empty query lists every prompt, newest first. Click **?** for the query syntax.
 - **Filters** (left). Filter by Author (you / agent / skill / system), Source (Agents window, Copilot CLI, autopilot, Chat panel) and Repository. Each count assumes every other filter, so options never disappear. Drag across the **When** histogram to pick a date range.
@@ -23,7 +23,7 @@ Press **Ctrl+Alt+E** (macOS **Cmd+Ctrl+E**), click **$(history) Prompts** in the
   - **Lines** join prompts of the same session; dashed lines connect a forked session to its parent.
   - **Interaction:** click a legend entry to highlight that group, click a dot to select it, and double-click to copy.
 - **Group by** (table). Group rows by day, session, repository or topic.
-- **Index** (toolbar, or **Yesterprompt: Index & Model Settings**). Shows index status and live progress. Lets you choose the embedding model (local BGE or MiniLM, a remote OpenAI-compatible endpoint, or off), set threads and which messages get embedded, scan now, pause or resume embedding, and rebuild embeddings.
+- **Index** (toolbar, or **Promptback: Index & Model Settings**). Shows index status and live progress. Lets you choose the embedding model (local BGE or MiniLM, a remote OpenAI-compatible endpoint, or off), set threads and which messages get embedded, scan now, pause or resume embedding, and rebuild embeddings.
 - **Details** (right). The full prompt with matches highlighted; Copy, Insert into chat, Open session and Document actions; and every prompt from the same session, including where a fork branched off. Rows from the selected prompt's session are tinted in the table.
 - **Keyboard.** `/` focus search · `↑` `↓` move · `Enter` copy · `Ctrl+Enter` insert into chat · `O` open session · `G` toggle graph.
 
@@ -35,14 +35,14 @@ The **Source** pill shows where a prompt was sent (Agents window, Copilot CLI, A
 
 ### Sidebar
 
-The **Yesterprompt** activity-bar view lists recent sessions (Today, Yesterday, This week, Earlier). Expand a session to see its prompts, and click one to show it in the Explorer. The **Index** section summarizes indexing health. The Agents window has no activity bar, so use the keyboard shortcuts there.
+The **Promptback** activity-bar view lists recent sessions (Today, Yesterday, This week, Earlier). Expand a session to see its prompts, and click one to show it in the Explorer. The **Index** section summarizes indexing health. The Agents window has no activity bar, so use the keyboard shortcuts there.
 
 ### Quick search
 
-Press **Ctrl+Alt+H** (macOS **Cmd+Ctrl+H**), or run **Yesterprompt: Quick Search**. Then:
+Press **Ctrl+Alt+H** (macOS **Cmd+Ctrl+H**), or run **Promptback: Quick Search**. Then:
 
 - Type to search. An empty query lists your most recent prompts.
-- **Enter** copies the prompt. Change this with `yesterprompt.defaultAction`.
+- **Enter** copies the prompt. Change this with `promptback.defaultAction`.
 - Each result has buttons to **Copy**, **Insert into chat** (pre-fills the chat input without sending), **Show full prompt**, and **Open / resume session**. "+N more in this session" means further matches from that session were folded away; open the Explorer to see them all.
 - The **filter** button includes agent, skill and system messages. The **table** button opens the current query in the Explorer.
 
@@ -67,8 +67,8 @@ Combine free text with filters, for example `tree view design doc repo:PyRIT aft
 
 The extension registers an MCP server, so chat agents in VS Code, including Agents-window sessions, can search your prompt history themselves. Ask things like "find what I asked about the retry policy last month and reuse it". The tools are `search_prompts`, `get_prompt`, `get_session`, `list_recent_sessions` and `index_status`. All are read-only, so VS Code runs them without a confirmation prompt.
 
-- Turn it off with `yesterprompt.mcp.enabled`.
-- Copilot CLI in a terminal can run the same server as `yester mcp` (see the [repository README](https://github.com/spencrr/yesterprompt#mcp-server)). If Copilot CLI's `mcp-config.json` defines a `yesterprompt` server, the extension doesn't register its own copy, because Copilot sessions load that entry themselves. VS Code's own chat panel reads that file only when `chat.mcp.discovery.enabled` has `copilot` on (off by default in VS Code 1.141).
+- Turn it off with `promptback.mcp.enabled`.
+- Copilot CLI in a terminal can run the same server as `promptback mcp` (see the [repository README](https://github.com/spencrr/promptback#mcp-server)). If Copilot CLI's `mcp-config.json` defines a `promptback` server, the extension doesn't register its own copy, because Copilot sessions load that entry themselves. VS Code's own chat panel reads that file only when `chat.mcp.discovery.enabled` has `copilot` on (off by default in VS Code 1.141).
 
 ### Opening a session
 
@@ -78,26 +78,26 @@ The extension registers an MCP server, so chat agents in VS Code, including Agen
 
 ## Using it inside the Agents window
 
-The Agents window runs extensions only if they are explicitly allowed. This extension offers to enable itself once (from a normal window), or you can run **Yesterprompt: Enable in Agents Window**, which adds it to `extensions.supportAgentsWindow`. Then reload the Agents window. This is experimental and depends on the VS Code build.
+The Agents window runs extensions only if they are explicitly allowed. This extension offers to enable itself once (from a normal window), or you can run **Promptback: Enable in Agents Window**, which adds it to `extensions.supportAgentsWindow`. Then reload the Agents window. This is experimental and depends on the VS Code build.
 
 There, the Explorer opens as a full-area tab and adapts to the narrower pane (filters move above the table, details below). The Agents window has no status bar, so use the keyboard shortcuts or the Command Palette.
 
 ## Privacy
 
-- **Read-only access.** Session files are only ever read. The index (`index.db`) is a separate SQLite file in `~/.yesterprompt` (override with `YESTERPROMPT_HOME` or `yesterprompt.index.directory`). Delete that folder to forget everything.
-- **Model downloads.** The default model ships inside the extension. If you pick another local model, only model files are downloaded, from a pinned Hugging Face revision verified by SHA-256. Set `yesterprompt.embedding.allowDownload` to `false` to forbid downloads.
-- **Remote embeddings.** `yesterprompt.embedding.provider: "openai-compatible"` sends prompt text to the configured endpoint. Only use it with endpoints you trust, such as Azure OpenAI in your tenant or local Ollama.
-- **Agent tools.** When an agent calls the MCP tools, the prompts they return become part of that agent's context and are sent to its model, which may be a different model or project than the one they were written for. Set `yesterprompt.mcp.enabled` to `false` to keep agents out.
+- **Read-only access.** Session files are only ever read. The index (`index.db`) is a separate SQLite file in `~/.promptback` (override with `PROMPTBACK_HOME` or `promptback.index.directory`). Delete that folder to forget everything.
+- **Model downloads.** The default model ships inside the extension. If you pick another local model, only model files are downloaded, from a pinned Hugging Face revision verified by SHA-256. Set `promptback.embedding.allowDownload` to `false` to forbid downloads.
+- **Remote embeddings.** `promptback.embedding.provider: "openai-compatible"` sends prompt text to the configured endpoint. Only use it with endpoints you trust, such as Azure OpenAI in your tenant or local Ollama.
+- **Agent tools.** When an agent calls the MCP tools, the prompts they return become part of that agent's context and are sent to its model, which may be a different model or project than the one they were written for. Set `promptback.mcp.enabled` to `false` to keep agents out.
 
 ## Settings
 
 | Setting | Default | |
 |---|---|---|
-| `yesterprompt.defaultAction` | `copy` | What Enter does: `copy`, `insert`, `preview`, `open` |
-| `yesterprompt.mcp.enabled` | `true` | Offer the MCP tools to chat agents (including the Agents window) |
-| `yesterprompt.embedding.provider` | `local` | `local`, `openai-compatible`, `none` |
-| `yesterprompt.embedding.model` | `bge-small-en-v1.5` | Or `all-MiniLM-L6-v2` (faster to index, lower quality) |
-| `yesterprompt.embedding.threads` | `4` | CPU threads for local embedding |
-| `yesterprompt.index.embedOrigins` | `["human"]` | Which messages get semantic embeddings; all are keyword-searchable |
-| `yesterprompt.index.backgroundIntervalMinutes` | `2` | Background pick-up of new prompts |
-| `yesterprompt.sources.*` | | Enable or disable sources, override `~/.copilot`, keep deleted sessions |
+| `promptback.defaultAction` | `copy` | What Enter does: `copy`, `insert`, `preview`, `open` |
+| `promptback.mcp.enabled` | `true` | Offer the MCP tools to chat agents (including the Agents window) |
+| `promptback.embedding.provider` | `local` | `local`, `openai-compatible`, `none` |
+| `promptback.embedding.model` | `bge-small-en-v1.5` | Or `all-MiniLM-L6-v2` (faster to index, lower quality) |
+| `promptback.embedding.threads` | `4` | CPU threads for local embedding |
+| `promptback.index.embedOrigins` | `["human"]` | Which messages get semantic embeddings; all are keyword-searchable |
+| `promptback.index.backgroundIntervalMinutes` | `2` | Background pick-up of new prompts |
+| `promptback.sources.*` | | Enable or disable sources, override `~/.copilot`, keep deleted sessions |

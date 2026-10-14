@@ -1,7 +1,7 @@
 import './styles.css';
 import { render } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { ExploreResult } from '@yesterprompt/core/types';
+import type { ExploreResult } from '@promptback/core/types';
 import type { PromptAction, ToWebview } from '../src/explorer/messages.js';
 import { Icon } from './components/common.js';
 import { Detail } from './components/Detail.js';
@@ -10,7 +10,7 @@ import { GraphView } from './components/GraphView.js';
 import { Help } from './components/Help.js';
 import { type IndexState, IndexPanel } from './components/IndexPanel.js';
 import { DEFAULT_WIDTHS, Table } from './components/Table.js';
-import { type ColorBy, DEFAULT_VIEW, type GroupBy, type ViewModel, type ViewState, computeView, highlightTerms, topicColors } from './model.js';
+import { type ColorBy, DEFAULT_VIEW, type GroupBy, type ViewModel, type ViewState, computeView, highlightTerms, setClientCatalog, topicColors } from './model.js';
 import { type ColumnKey, post, useLatest, vscode } from './vscode.js';
 
 const saved = vscode.getState();
@@ -65,6 +65,7 @@ function App() {
 			const m = e.data;
 			switch (m.type) {
 				case 'init':
+					setClientCatalog(m.catalog);
 					setReducedMotion(m.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches);
 					open(m);
 					post({ type: 'indexStatus' });
@@ -95,7 +96,7 @@ function App() {
 					runQuery(queryRef.current);
 					break;
 				case 'indexStatus':
-					setIndexState(s => ({ ...s, status: m.status ?? s.status, settings: m.settings, error: m.error }));
+					setIndexState(s => ({ ...s, status: m.status ?? s.status, settings: m.settings, choices: m.choices, error: m.error }));
 					break;
 				case 'progress':
 					setIndexState(s => ({ ...s, progress: m.progress }));

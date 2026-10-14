@@ -1,27 +1,45 @@
 {
-  "name": "yesterprompt-monorepo",
+  "name": "promptback-monorepo",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Semantic search over every prompt you've sent to your AI coding agents. Local-first.",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spencrr/promptback.git"
+  },
   "workspaces": [
     "packages/core",
     "packages/cli",
     "packages/vscode"
   ],
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.13",
+    "npm": ">=10"
   },
   "scripts": {
-    "build": "npm run build -w packages/core && npm run build -w packages/cli && npm run build -w packages/vscode",
+    "build": "npm run build -w packages/cli && npm run build -w packages/vscode",
     "typecheck": "tsc -p packages/core && tsc -p packages/cli && tsc -p packages/vscode && tsc -p packages/vscode/webview",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
     "test": "vitest run",
-    "package": "npm run package -w packages/vscode"
+    "check": "npm run typecheck && npm run lint && npm test",
+    "package": "npm run package -w packages/vscode",
+    "bench": "npm run bench -w packages/core"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "^22.13.0",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.0",
     "vitest": "^4.0.0"
+  },
+  "allowScripts": {
+    "@vscode/vsce-sign": false,
+    "esbuild": false,
+    "keytar": false,
+    "onnxruntime-node": false
   }
 }

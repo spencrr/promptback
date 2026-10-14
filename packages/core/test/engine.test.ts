@@ -47,7 +47,7 @@ function writeSession(id: string, yaml: string, events: { type: string; data: ob
 }
 
 beforeEach(() => {
-	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yesterprompt-engine-'));
+	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'promptback-engine-'));
 	copilotHome = path.join(tmp, 'copilot');
 	vscodeRoot = path.join(tmp, 'Code');
 	const design = 'Write a design doc for the tree view in CoPyRIT with goals and non-goals';
@@ -90,11 +90,23 @@ afterEach(async () => {
 
 const engines: PromptSearchEngine[] = [];
 
+/** Only the fixture sources: the Copilot home and VS Code root under `tmp`, never this machine's own history. */
+function fixtureSources(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	const roots = [{ product: 'Code', root: vscodeRoot }];
+	return {
+		copilot: { home: copilotHome },
+		'vscode-chat': { roots },
+		'agent-host': { roots },
+		'claude-code': { enabled: false },
+		codex: { enabled: false },
+		...overrides,
+	};
+}
+
 function open(provider?: EmbeddingProvider) {
 	const e = PromptSearchEngine.open({
 		indexDir: path.join(tmp, 'index'),
-		copilotHome,
-		vscodeRoots: [{ product: 'Code', root: vscodeRoot }],
+		sources: fixtureSources(),
 		embeddingProvider: provider,
 		embedding: provider ? undefined : { kind: 'none' },
 	});
@@ -172,21 +184,58 @@ describe('PromptSearchEngine', () => {
 	});
 
 	it('syncs with the source settings saved in the index when given none (CLI, MCP)', async () => {
-		const vscodeRoots = [{ product: 'Code', root: vscodeRoot }];
-		const ext = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), copilotHome, vscodeChat: false, retainDeleted: true, vscodeRoots, embedding: { kind: 'none' } });
+		const ext = PromptSearchEngine.open({
+			indexDir: path.join(tmp, 'index'),
+			sources: fixtureSources({ 'vscode-chat': { enabled: false } }),
+			retainDeleted: true,
+			embedding: { kind: 'none' },
+		});
 		engines.push(ext);
 		await ext.sync();
 		await ext.close();
 		fs.rmSync(path.join(copilotHome, 'session-state', 'sess-c'), { recursive: true });
 
-		// Like `yester index` on a machine whose own Copilot home is elsewhere.
+		// Like `promptback index` on a machine whose own Copilot home is elsewhere.
 		vi.stubEnv('COPILOT_HOME', path.join(tmp, 'elsewhere'));
-		const cli = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), vscodeRoots, embedding: { kind: 'none' } });
+		const cli = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), embedding: { kind: 'none' } });
 		engines.push(cli);
 		const r = await cli.sync();
 		expect(r.removedPrompts).toBe(0);
 		expect(cli.status().promptsBySource).toEqual({ copilot: 5 });
 		expect((await cli.search('retry_policy')).hits).toHaveLength(1);
+		expect(cli.describeSources().map(s => [s.id, s.enabled])).toEqual([
+			['copilot', true],
+			['vscode-chat', false],
+			['agent-host', true],
+			['claude-code', false],
+			['codex', false],
+		]);
+	});
+
+	it('reads version-1 source settings written by older builds', async () => {
+		const ext = open();
+		await ext.sync();
+		await ext.close();
+		// An older build saved the flat shape; the Copilot source stays off and the home is kept.
+		const legacy = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), embedding: { kind: 'none' } });
+		engines.push(legacy);
+		legacy.store.setMeta('sources', JSON.stringify({ copilotHome: null, vscodeChat: false, retainDeleted: true }));
+		expect(legacy.describeSources().find(s => s.id === 'copilot')).toMatchObject({ enabled: false });
+		expect(legacy.describeSources().find(s => s.id === 'vscode-chat')).toMatchObject({ enabled: false });
+		legacy.store.setMeta('sources', JSON.stringify({ copilotHome: 'c:\\elsewhere' }));
+		expect(legacy.describeSources().find(s => s.id === 'copilot')).toMatchObject({ enabled: true, options: { home: 'c:\\elsewhere' } });
+	});
+
+	it('reports invalid source options instead of failing the sync', async () => {
+		const e = PromptSearchEngine.open({
+			indexDir: path.join(tmp, 'index'),
+			sources: fixtureSources({ codex: { enabled: 'yes', home: 42 } }),
+			embedding: { kind: 'none' },
+		});
+		engines.push(e);
+		const r = await e.sync();
+		expect(r.addedPrompts).toBe(6);
+		expect(r.errors.join('\n')).toMatch(/prompt source 'codex'.*enabled.*home/s);
 	});
 
 	it('loads the model only for queries that need it and frees memory when idle', async () => {

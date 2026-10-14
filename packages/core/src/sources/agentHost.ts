@@ -18,6 +18,13 @@ export interface AgentHostDbState {
 	readonly title?: string;
 }
 
+/** `vscode://agents/agent-host-session/copilotcli/<id>[/chat/<chatId>]` (see vscode `platform/agentHost/common/openSessionLink.ts`). */
+export function agentsWindowLink(product: string, agentHostSessionId: string, chatId?: string): string {
+	const scheme = product === 'Code - Insiders' ? 'vscode-insiders' : 'vscode';
+	const base = `${scheme}://agents/agent-host-session/copilotcli/${encodeURIComponent(agentHostSessionId)}`;
+	return chatId ? `${base}/chat/${encodeURIComponent(chatId)}` : base;
+}
+
 /** Lists `<productRoot>/agentSessionData/<agentHostSessionId>/session.db`. */
 export function listAgentHostDbs(productRoot: string): { agentHostSessionId: string; dbPath: string }[] {
 	const root = path.join(productRoot, 'agentSessionData');

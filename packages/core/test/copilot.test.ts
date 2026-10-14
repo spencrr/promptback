@@ -12,7 +12,7 @@ function ev(type: string, data: Record<string, unknown>, id: string, ts = '2026-
 }
 
 beforeEach(() => {
-	home = fs.mkdtempSync(path.join(os.tmpdir(), 'yesterprompt-copilot-'));
+	home = fs.mkdtempSync(path.join(os.tmpdir(), 'promptback-copilot-'));
 	fs.mkdirSync(path.join(home, 'session-state', SID), { recursive: true });
 	fs.mkdirSync(path.join(home, 'session-state', '.session-operation-locks'), { recursive: true });
 });

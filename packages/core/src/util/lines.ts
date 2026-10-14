@@ -14,6 +14,8 @@ export interface ScanLinesOptions {
 	readonly onLine: (line: Buffer, offset: number) => void;
 	/** Wanted lines larger than this are skipped and counted as oversized. */
 	readonly maxLineBytes?: number;
+	/** How many leading bytes `wantLine` sees (default 96). */
+	readonly headBytes?: number;
 }
 
 export interface ScanLinesResult {
@@ -28,6 +30,7 @@ export interface ScanLinesResult {
  */
 export function scanLines(file: string, opts: ScanLinesOptions): ScanLinesResult {
 	const maxLineBytes = opts.maxLineBytes ?? 64 * 1024 * 1024;
+	const headBytes = opts.headBytes ?? HEAD_BYTES;
 	const fd = fs.openSync(file, 'r');
 	let lineStart = opts.start;
 	let lastComplete = opts.start;
@@ -66,8 +69,8 @@ export function scanLines(file: string, opts: ScanLinesOptions): ScanLinesResult
 					partsLen += seg.length;
 				}
 				if (!decided) {
-					head += seg.subarray(0, HEAD_BYTES - head.length).toString('latin1');
-					if (head.length >= HEAD_BYTES || nl !== -1) {
+					head += seg.subarray(0, headBytes - head.length).toString('latin1');
+					if (head.length >= headBytes || nl !== -1) {
 						decided = true;
 						want = opts.wantLine(head);
 						if (!want) {

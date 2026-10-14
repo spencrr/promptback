@@ -10,6 +10,8 @@ export interface OpenAICompatibleOptions {
 	readonly batchSize?: number;
 	/** Max characters sent per input; longer chunks are cut. */
 	readonly maxChars?: number;
+	/** Transport (defaults to the global `fetch`); tests substitute an offline one. */
+	readonly fetch?: typeof fetch;
 }
 
 /** Remote (or loopback) embeddings through the de-facto standard `POST {baseUrl}/embeddings` API. */
@@ -27,6 +29,12 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
 			dims: this.dims,
 			local: loopback,
 		};
+	}
+
+	/** Serializes without the API key, so logging or persisting a provider can never leak it. */
+	toJSON(): Record<string, unknown> {
+		const { apiKey, fetch: _fetch, ...rest } = this.opts;
+		return { ...rest, apiKey: apiKey ? '[redacted]' : undefined, info: this.info };
 	}
 
 	async embedQuery(text: string): Promise<Float32Array> {
@@ -54,8 +62,13 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
 			headers['authorization'] = `Bearer ${this.opts.apiKey}`;
 			headers['api-key'] = this.opts.apiKey;
 		}
-		const res = await fetch(`${this.opts.baseUrl.replace(/\/$/, '')}/embeddings`, { method: 'POST', headers, body: JSON.stringify(body) });
+		const res = await (this.opts.fetch ?? fetch)(`${this.opts.baseUrl.replace(/\/$/, '')}/embeddings`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify(body),
+		});
 		if (!res.ok) {
+			// The response body is included for diagnosis; request headers (the key) never are.
 			throw new Error(`Embedding request failed: ${res.status} ${res.statusText} ${(await res.text()).slice(0, 300)}`);
 		}
 		const json = await res.json() as { data: { index: number; embedding: number[] }[] };

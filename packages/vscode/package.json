@@ -1,13 +1,13 @@
 {
-  "name": "yesterprompt",
-  "displayName": "Yesterprompt",
+  "name": "promptback-vscode",
+  "displayName": "Promptback",
   "description": "Semantic search over every prompt you've sent to your AI coding agents: Copilot CLI, the VS Code Agents window, autopilot and Chat. Local-first.",
   "version": "0.5.1",
   "private": true,
   "publisher": "spencrr",
   "repository": {
     "type": "git",
-    "url": "https://github.com/spencrr/yesterprompt"
+    "url": "https://github.com/spencrr/promptback"
   },
   "engines": {
     "vscode": "^1.101.0"
@@ -40,83 +40,83 @@
   "contributes": {
     "commands": [
       {
-        "command": "yesterprompt.search",
+        "command": "promptback.search",
         "title": "Quick Search",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(search)"
       },
       {
-        "command": "yesterprompt.openExplorer",
+        "command": "promptback.openExplorer",
         "title": "Open Prompt Explorer",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(table)"
       },
       {
-        "command": "yesterprompt.openIndexPanel",
+        "command": "promptback.openIndexPanel",
         "title": "Index & Model Settings",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(settings-gear)"
       },
       {
-        "command": "yesterprompt.searchAll",
+        "command": "promptback.searchAll",
         "title": "Quick Search (Including Agent, Skill and System Messages)",
-        "category": "Yesterprompt"
+        "category": "Promptback"
       },
       {
-        "command": "yesterprompt.reindex",
+        "command": "promptback.reindex",
         "title": "Re-scan and Index Now",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(sync)"
       },
       {
-        "command": "yesterprompt.showStatus",
+        "command": "promptback.showStatus",
         "title": "Show Index Status",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(info)"
       },
       {
-        "command": "yesterprompt.showLog",
+        "command": "promptback.showLog",
         "title": "Show Log",
-        "category": "Yesterprompt"
+        "category": "Promptback"
       },
       {
-        "command": "yesterprompt.enableInAgentsWindow",
+        "command": "promptback.enableInAgentsWindow",
         "title": "Enable in Agents Window",
-        "category": "Yesterprompt"
+        "category": "Promptback"
       },
       {
-        "command": "yesterprompt.refreshSidebar",
+        "command": "promptback.refreshSidebar",
         "title": "Refresh",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(refresh)"
       },
       {
-        "command": "yesterprompt.revealPrompt",
+        "command": "promptback.revealPrompt",
         "title": "Show in Prompt Explorer",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(table)"
       },
       {
-        "command": "yesterprompt.copyPromptFromTree",
+        "command": "promptback.copyPromptFromTree",
         "title": "Copy Prompt",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(copy)"
       },
       {
-        "command": "yesterprompt.openSessionFromTree",
+        "command": "promptback.openSessionFromTree",
         "title": "Open Session",
-        "category": "Yesterprompt",
+        "category": "Promptback",
         "icon": "$(link-external)"
       }
     ],
     "keybindings": [
       {
-        "command": "yesterprompt.search",
+        "command": "promptback.search",
         "key": "ctrl+alt+h",
         "mac": "cmd+ctrl+h"
       },
       {
-        "command": "yesterprompt.openExplorer",
+        "command": "promptback.openExplorer",
         "key": "ctrl+alt+e",
         "mac": "cmd+ctrl+e"
       }
@@ -127,7 +127,7 @@
         "title": "General",
         "order": 1,
         "properties": {
-          "yesterprompt.defaultAction": {
+          "promptback.defaultAction": {
             "type": "string",
             "enum": [
               "copy",
@@ -145,7 +145,7 @@
             "description": "What Enter does on a search result.",
             "order": 0
           },
-          "yesterprompt.maxResults": {
+          "promptback.maxResults": {
             "type": "number",
             "default": 50,
             "minimum": 5,
@@ -153,10 +153,10 @@
             "description": "Maximum results shown in the search picker.",
             "order": 1
           },
-          "yesterprompt.mcp.enabled": {
+          "promptback.mcp.enabled": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Offer the Yesterprompt MCP server to chat agents in VS Code, including the Agents window, so they can search and read your past prompts (and send what they find to their model). Skipped while Copilot CLI's `mcp-config.json` defines a `yesterprompt` server: Copilot sessions use that entry instead.",
+            "markdownDescription": "Offer the Promptback MCP server to chat agents in VS Code, including the Agents window, so they can search and read your past prompts (and send what they find to their model). Skipped while Copilot CLI's `mcp-config.json` defines a `promptback` server: Copilot sessions use that entry instead.",
             "order": 2
           }
         }
@@ -166,29 +166,59 @@
         "title": "Sources",
         "order": 2,
         "properties": {
-          "yesterprompt.sources.copilot": {
+          "promptback.sources.copilot": {
             "type": "boolean",
             "default": true,
-            "description": "Index Copilot agent sessions (Agents window, Copilot CLI, autopilot).",
+            "description": "Index Copilot sessions (Agents window, Copilot CLI, autopilot).",
             "order": 0
           },
-          "yesterprompt.sources.vscodeChat": {
-            "type": "boolean",
-            "default": true,
-            "description": "Index VS Code Chat panel history (Stable and Insiders).",
-            "order": 1
-          },
-          "yesterprompt.sources.copilotHome": {
+          "promptback.sources.copilotHome": {
             "type": "string",
             "default": "",
             "markdownDescription": "Copilot home folder (default `$COPILOT_HOME` or `~/.copilot`).",
+            "order": 1
+          },
+          "promptback.sources.vscodeChat": {
+            "type": "boolean",
+            "default": true,
+            "description": "Index VS Code Chat panel history (Stable and Insiders).",
             "order": 2
           },
-          "yesterprompt.sources.retainDeleted": {
+          "promptback.sources.agentHost": {
+            "type": "boolean",
+            "default": true,
+            "description": "Link Copilot sessions to the Agents-window sessions that wrap them (adds \"Open in Agents window\" and the window's title).",
+            "order": 3
+          },
+          "promptback.sources.claudeCode": {
+            "type": "boolean",
+            "default": true,
+            "description": "Index Claude Code sessions (CLI, Agent SDK and VS Code extension).",
+            "order": 4
+          },
+          "promptback.sources.claudeCodeHome": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "Claude Code configuration folder (default `$CLAUDE_CONFIG_DIR` or `~/.claude`).",
+            "order": 5
+          },
+          "promptback.sources.codex": {
+            "type": "boolean",
+            "default": true,
+            "description": "Index OpenAI Codex threads (CLI, exec and VS Code).",
+            "order": 6
+          },
+          "promptback.sources.codexHome": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "Codex home folder (default `$CODEX_HOME` or `~/.codex`).",
+            "order": 7
+          },
+          "promptback.sources.retainDeleted": {
             "type": "boolean",
             "default": false,
             "description": "Keep prompts in the index after their session is deleted from disk.",
-            "order": 3
+            "order": 8
           }
         }
       },
@@ -197,7 +227,7 @@
         "title": "Semantic Search",
         "order": 3,
         "properties": {
-          "yesterprompt.embedding.provider": {
+          "promptback.embedding.provider": {
             "type": "string",
             "enum": [
               "local",
@@ -213,7 +243,7 @@
             "markdownDescription": "Embedding backend for semantic search. Changing it re-embeds the index in the background.",
             "order": 0
           },
-          "yesterprompt.embedding.model": {
+          "promptback.embedding.model": {
             "type": "string",
             "enum": [
               "bge-small-en-v1.5",
@@ -223,7 +253,7 @@
             "markdownDescription": "Local embedding model. `bge-small-en-v1.5` gave the best retrieval quality on real prompt history; `all-MiniLM-L6-v2` is ~2x faster to index.",
             "order": 1
           },
-          "yesterprompt.embedding.threads": {
+          "promptback.embedding.threads": {
             "type": "number",
             "default": 4,
             "minimum": 1,
@@ -231,19 +261,19 @@
             "description": "CPU threads used for local embedding.",
             "order": 2
           },
-          "yesterprompt.embedding.allowDownload": {
+          "promptback.embedding.allowDownload": {
             "type": "boolean",
             "default": true,
             "markdownDescription": "Allow downloading the pinned, hash-verified model from Hugging Face when it is not bundled or cached. Only model files are downloaded; no prompt text is sent.",
             "order": 3
           },
-          "yesterprompt.embedding.modelDir": {
+          "promptback.embedding.modelDir": {
             "type": "string",
             "default": "",
             "markdownDescription": "Folder that already contains the model files (for offline machines). Leave empty to use the bundled or cached model.",
             "order": 4
           },
-          "yesterprompt.index.embedOrigins": {
+          "promptback.index.embedOrigins": {
             "type": "array",
             "items": {
               "type": "string",
@@ -268,25 +298,25 @@
         "title": "Remote Embeddings (OpenAI-compatible)",
         "order": 4,
         "properties": {
-          "yesterprompt.embedding.openai.baseUrl": {
+          "promptback.embedding.openai.baseUrl": {
             "type": "string",
             "default": "",
             "markdownDescription": "Base URL for `openai-compatible`, e.g. `https://<resource>.openai.azure.com/openai/v1` or `http://localhost:11434/v1`.",
             "order": 0
           },
-          "yesterprompt.embedding.openai.model": {
+          "promptback.embedding.openai.model": {
             "type": "string",
             "default": "text-embedding-3-small",
             "description": "Model/deployment name for the openai-compatible provider.",
             "order": 1
           },
-          "yesterprompt.embedding.openai.apiKeyEnv": {
+          "promptback.embedding.openai.apiKeyEnv": {
             "type": "string",
             "default": "",
             "description": "Name of an environment variable holding the API key (keys are never stored in settings).",
             "order": 2
           },
-          "yesterprompt.embedding.openai.dimensions": {
+          "promptback.embedding.openai.dimensions": {
             "type": "number",
             "default": 0,
             "description": "Requested embedding dimensions (0 = model default).",
@@ -299,17 +329,17 @@
         "title": "Index",
         "order": 5,
         "properties": {
-          "yesterprompt.index.backgroundIntervalMinutes": {
+          "promptback.index.backgroundIntervalMinutes": {
             "type": "number",
             "default": 2,
             "minimum": 0,
             "description": "How often to pick up new prompts in the background (0 = only when searching).",
             "order": 0
           },
-          "yesterprompt.index.directory": {
+          "promptback.index.directory": {
             "type": "string",
             "default": "",
-            "markdownDescription": "Index location. Empty = `~/.yesterprompt` (or `$YESTERPROMPT_HOME`), shared by every VS Code window (including the Agents window), the CLI and the MCP server.",
+            "markdownDescription": "Index location. Empty = `~/.promptback` (or `$PROMPTBACK_HOME`), shared by every VS Code window (including the Agents window), the CLI and the MCP server.",
             "order": 1
           }
         }
@@ -318,88 +348,88 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "yesterprompt.searchAll",
+          "command": "promptback.searchAll",
           "when": "false"
         },
         {
-          "command": "yesterprompt.refreshSidebar",
+          "command": "promptback.refreshSidebar",
           "when": "false"
         },
         {
-          "command": "yesterprompt.revealPrompt",
+          "command": "promptback.revealPrompt",
           "when": "false"
         },
         {
-          "command": "yesterprompt.copyPromptFromTree",
+          "command": "promptback.copyPromptFromTree",
           "when": "false"
         },
         {
-          "command": "yesterprompt.openSessionFromTree",
+          "command": "promptback.openSessionFromTree",
           "when": "false"
         }
       ],
       "view/title": [
         {
-          "command": "yesterprompt.openExplorer",
-          "when": "view == yesterprompt.sessions",
+          "command": "promptback.openExplorer",
+          "when": "view == promptback.sessions",
           "group": "navigation@1"
         },
         {
-          "command": "yesterprompt.search",
-          "when": "view == yesterprompt.sessions",
+          "command": "promptback.search",
+          "when": "view == promptback.sessions",
           "group": "navigation@2"
         },
         {
-          "command": "yesterprompt.refreshSidebar",
-          "when": "view == yesterprompt.sessions",
+          "command": "promptback.refreshSidebar",
+          "when": "view == promptback.sessions",
           "group": "navigation@3"
         },
         {
-          "command": "yesterprompt.reindex",
-          "when": "view == yesterprompt.index",
+          "command": "promptback.reindex",
+          "when": "view == promptback.index",
           "group": "navigation@1"
         },
         {
-          "command": "yesterprompt.showStatus",
-          "when": "view == yesterprompt.index",
+          "command": "promptback.showStatus",
+          "when": "view == promptback.index",
           "group": "navigation@2"
         },
         {
-          "command": "yesterprompt.openIndexPanel",
-          "when": "view == yesterprompt.index",
+          "command": "promptback.openIndexPanel",
+          "when": "view == promptback.index",
           "group": "navigation@0"
         }
       ],
       "view/item/context": [
         {
-          "command": "yesterprompt.copyPromptFromTree",
-          "when": "view == yesterprompt.sessions && viewItem == prompt",
+          "command": "promptback.copyPromptFromTree",
+          "when": "view == promptback.sessions && viewItem == prompt",
           "group": "inline@1"
         },
         {
-          "command": "yesterprompt.openSessionFromTree",
-          "when": "view == yesterprompt.sessions && viewItem == prompt",
+          "command": "promptback.openSessionFromTree",
+          "when": "view == promptback.sessions && viewItem == prompt",
           "group": "inline@2"
         },
         {
-          "command": "yesterprompt.revealPrompt",
-          "when": "view == yesterprompt.sessions && viewItem == session",
+          "command": "promptback.revealPrompt",
+          "when": "view == promptback.sessions && viewItem == session",
           "group": "inline@1"
         },
         {
-          "command": "yesterprompt.openSessionFromTree",
-          "when": "view == yesterprompt.sessions && viewItem == session",
+          "command": "promptback.openSessionFromTree",
+          "when": "view == promptback.sessions && viewItem == session",
           "group": "inline@2"
         }
       ]
     },
     "customEditors": [
       {
-        "viewType": "yesterprompt.explorer",
+        "viewType": "promptback.explorer",
         "displayName": "Prompt Explorer",
         "selector": [
           {
-            "filenamePattern": "yesterprompt:/**"
+            "filenamePattern": "promptback:/**"
           }
         ],
         "priority": "default"
@@ -407,29 +437,29 @@
     ],
     "mcpServerDefinitionProviders": [
       {
-        "id": "yesterprompt",
-        "label": "Yesterprompt"
+        "id": "promptback",
+        "label": "Promptback"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "yesterprompt",
-          "title": "Yesterprompt",
+          "id": "promptback",
+          "title": "Promptback",
           "icon": "$(history)"
         }
       ]
     },
     "views": {
-      "yesterprompt": [
+      "promptback": [
         {
-          "id": "yesterprompt.sessions",
+          "id": "promptback.sessions",
           "name": "Recent Sessions",
           "icon": "$(history)",
-          "contextualTitle": "Yesterprompt"
+          "contextualTitle": "Promptback"
         },
         {
-          "id": "yesterprompt.index",
+          "id": "promptback.index",
           "name": "Index",
           "icon": "$(database)",
           "visibility": "collapsed"
@@ -438,8 +468,8 @@
     },
     "viewsWelcome": [
       {
-        "view": "yesterprompt.sessions",
-        "contents": "No prompts indexed yet. Your Copilot agent and Chat history is scanned in the background.\n[Open Prompt Explorer](command:yesterprompt.openExplorer)\n[Scan Now](command:yesterprompt.reindex)"
+        "view": "promptback.sessions",
+        "contents": "No prompts indexed yet. Your Copilot agent and Chat history is scanned in the background.\n[Open Prompt Explorer](command:promptback.openExplorer)\n[Scan Now](command:promptback.reindex)"
       }
     ]
   },
@@ -450,7 +480,7 @@
     "test:integration": "node ./test/integration/runTest.mjs"
   },
   "dependencies": {
-    "@yesterprompt/core": "*",
+    "@promptback/core": "*",
     "@vscode/codicons": "^0.0.46-24",
     "preact": "^10.29.8"
   },

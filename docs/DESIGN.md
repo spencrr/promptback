@@ -1,4 +1,4 @@
-# Yesterprompt: design
+# Promptback: design
 
 This document records the decisions behind this repository. It synthesizes five independent design proposals, each written by a separate research agent from a different angle:
 
@@ -22,26 +22,26 @@ This document records the decisions behind this repository. It synthesizes five 
 ## Architecture
 
 ```
-VS Code window(s) / Agents window             CLI (yester)          MCP server (stdio)
+VS Code window(s) / Agents window             CLI (promptback)          MCP server (stdio)
   extension (extension host, ~15 KB)              │                        │
     Quick Pick, commands, preview, open-session   │                        │
     └─ fork(ELECTRON_RUN_AS_NODE) ─► host.js       │                        │
                                      │            │                        │
                                      ▼            ▼                        ▼
-                         ┌──────── @yesterprompt/core: PromptSearchEngine ────────┐
+                         ┌──────── @promptback/core: PromptSearchEngine ────────┐
                          │ sources/ (streaming, incremental, read-only)           │
                          │ store.ts  node:sqlite: prompts, FTS5, chunks, vectors   │
                          │ embed/    pluggable: local ONNX | OpenAI-compatible     │
                          │ search/   query language, hybrid ranking                │
                          └────────────────────────────────────────────────────────┘
                                      │
-                  ~/.yesterprompt/index.db (shared, WAL, single-writer lease)
+                  ~/.promptback/index.db (shared, WAL, single-writer lease)
 ```
 
 - **Core has no `vscode` dependency.** The extension, the CLI and the MCP server are thin adapters over `PromptSearchEngine` (`sync`, `search`, `getPrompt`, `getSessionPrompts`, `status`).
 - **Inference runs in a child process.** The child is forked with VS Code's own runtime, so there's nothing to install. It unloads the model after 15 min idle, and it is restarted if it crashes.
-- **One index for all windows.** The index lives in a fixed per-user folder (`~/.yesterprompt`, or `$YESTERPROMPT_HOME`), so the main window, the Agents window (separate profile), the CLI and MCP share it. A lease row in SQLite elects a single writer. Other processes just read.
-- **The index owns its source settings.** Which sources to index, the Copilot home, and whether to keep deleted sessions are saved in the index (`meta.sources`) by every process that sets them, which is the extension and the MCP server it launches. Processes that set none, such as the CLI and `yester mcp`, use the saved values. Otherwise any writer with default options, for example a Copilot CLI MCP server refreshing the index, would delete sessions that `retainDeleted` keeps and would index sources the user turned off.
+- **One index for all windows.** The index lives in a fixed per-user folder (`~/.promptback`, or `$PROMPTBACK_HOME`), so the main window, the Agents window (separate profile), the CLI and MCP share it. A lease row in SQLite elects a single writer. Other processes just read.
+- **The index owns its source settings.** Which sources to index, the Copilot home, and whether to keep deleted sessions are saved in the index (`meta.sources`) by every process that sets them, which is the extension and the MCP server it launches. Processes that set none, such as the CLI and `promptback mcp`, use the saved values. Otherwise any writer with default options, for example a Copilot CLI MCP server refreshing the index, would delete sessions that `retainDeleted` keeps and would index sources the user turned off.
 - **No native modules beyond onnxruntime.** `node:sqlite` with FTS5 ships in VS Code's Electron Node 24 and in Node ≥ 22.13.
 
 ## Embeddings
@@ -112,8 +112,8 @@ This finds 27 forked sessions in the current corpus. It needs no re-scan, and it
 
 ## VS Code integration
 
-- **Quick search.** A Quick Pick with live debounced search. `sortByLabel = false` is set at runtime (the setter isn't gated by the proposal) plus `alwaysShow`, to keep our ranking. Each item has Copy, Insert into chat (`workbench.action.chat.open {query, isPartialQuery}`), Preview (virtual `yesterprompt-prompt:` document) and Open session buttons. A title button hands the query to the Explorer.
-- **Prompt Explorer.** A read-only **custom editor** on a virtual `yesterprompt:` file. In the Agents window, custom editors on a non-untitled resource get the whole editor area with no docked Details panel (`vs/sessions/contrib/layout/browser/desktop/desktopSharedHelpers.ts` `isEditorWithoutDockedDetails`); plain webview panels don't.
+- **Quick search.** A Quick Pick with live debounced search. `sortByLabel = false` is set at runtime (the setter isn't gated by the proposal) plus `alwaysShow`, to keep our ranking. Each item has Copy, Insert into chat (`workbench.action.chat.open {query, isPartialQuery}`), Preview (virtual `promptback-prompt:` document) and Open session buttons. A title button hands the query to the Explorer.
+- **Prompt Explorer.** A read-only **custom editor** on a virtual `promptback:` file. In the Agents window, custom editors on a non-untitled resource get the whole editor area with no docked Details panel (`vs/sessions/contrib/layout/browser/desktop/desktopSharedHelpers.ts` `isEditorWithoutDockedDetails`); plain webview panels don't.
   - **Webview.** Preact, ~70 KB, styled only with theme variables. Strict CSP with no remote content (images and links could leak prompt text). Prompt text is rendered as preformatted text with highlights, never as HTML or Markdown.
   - **Data flow.** One `explore(query)` call returns every matching occurrence, from a single snapshot. Facets, counts that exclude their own filter, sorting, duplicate hiding and the date histogram are computed client-side (`webview/model.ts`, unit-tested), so filter clicks are instant and can't disagree with each other. Superseded responses are dropped by request id. Full text and session context are fetched on selection. State is restored with `setState`.
   - **Graph ("constellation").** A per-query radial layout:
@@ -140,7 +140,7 @@ This finds 27 forked sessions in the current corpus. It needs no re-scan, and it
 
   Tool-call tallies are stored with the incremental read cursor and were backfilled once for existing indexes.
 - **Explorer tab.** `panel.title` and `panel.iconPath` override the file name and icon (`CustomEditorInput.getName` prefers the webview title).
-  - The virtual resource `yesterprompt:/Prompt Explorer` has no extension, so VS Code doesn't offer "Configure default editor for '*.x'", which is gated on `extname(resource) !== ''` in `editorResolverService.ts`.
+  - The virtual resource `promptback:/Prompt Explorer` has no extension, so VS Code doesn't offer "Configure default editor for '*.x'", which is gated on `extname(resource) !== ''` in `editorResolverService.ts`.
   - "Reopen With → Text Editor" can't be hidden: the text editor is registered for `*` and extensions can't declare exclusive priority. That view explains what the page is.
   - Comparable non-file pages in other extensions (GitLens Commit Graph, GitHub PR overview) use plain webview panels. We use a custom editor only because the Agents window gives the full editor area to custom editors, not plain panels.
 - **Sidebar.** An activity-bar container (main window only) with a Recent Sessions tree and an Index view. Per the VS Code UX guidelines, the container holds real views rather than acting as a button that opens an editor.
@@ -154,9 +154,9 @@ This finds 27 forked sessions in the current corpus. It needs no re-scan, and it
 
 ## MCP server
 
-`core/src/mcp.ts` (`@yesterprompt/core/mcp`) builds the server with the official TypeScript SDK and serves it over stdio. Two launchers share it:
-- `yester mcp`;
-- `dist/mcp.js` in the VSIX. VS Code starts it with its own runtime (`process.execPath` plus `ELECTRON_RUN_AS_NODE`, as the `McpStdioServerDefinition` docs suggest), and the extension passes its engine options in `YESTERPROMPT_OPTIONS`.
+`core/src/mcp.ts` (`@promptback/core/mcp`) builds the server with the official TypeScript SDK and serves it over stdio. Two launchers share it:
+- `promptback mcp`;
+- `dist/mcp.js` in the VSIX. VS Code starts it with its own runtime (`process.execPath` plus `ELECTRON_RUN_AS_NODE`, as the `McpStdioServerDefinition` docs suggest), and the extension passes its engine options in `PROMPTBACK_OPTIONS`.
 
 Design points:
 - **Tools.**
@@ -183,14 +183,14 @@ Design points:
 - **Agents window.** VS Code forwards MCP servers to agent-host sessions under the definition's label, including servers that extensions contribute (`collectNonPluginMcpServers` in `agentHostLocalCustomizations.ts`, and `agentHostMcpServerSupport.ts`). A `cwd`, a `version` or an env file makes a forwarded definition only partially supported, so the extension sets none of them.
 - **One copy per session.** `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json`) is always read by Copilot CLI and by the Copilot runtime behind Agents-window sessions. VS Code's own chat reads it only when the `copilot` source of `chat.mcp.discovery.enabled` is on. That source is off by default in VS Code 1.141 (checked in its extension host) and on in later source (`mcpConfiguration.ts`).
   - VS Code forwards extension servers to every agent-host session it starts, and an extension can't target session types. The only server VS Code ever withholds is Copilot Chat's built-in GitHub server (`isProviderBuiltInReplacement` in `agentHostMcpServerSupport.ts`).
-  - So whenever that file defines `yesterprompt`, the extension registers nothing, whatever the discovery setting, and logs why (`mcpProvider.ts`). It checks again when the file or its settings change.
+  - So whenever that file defines `promptback`, the extension registers nothing, whatever the discovery setting, and logs why (`mcpProvider.ts`). It checks again when the file or its settings change.
   - Cost of this rule:
-    - With VS Code 1.141's defaults, VS Code's own chat panel then has no Yesterprompt tools. Turning on `copilot` discovery restores them, and also brings in the file's other servers.
+    - With VS Code 1.141's defaults, VS Code's own chat panel then has no Promptback tools. Turning on `copilot` discovery restores them, and also brings in the file's other servers.
     - Claude and Codex sessions in the Agents window never receive Copilot-home servers (`CopilotHomeNotForwarded`), so they lose the tools as well.
   - VS Code caches extension server definitions per workspace (`mcp.extCachedServers` in `extensionMcpDiscovery.ts`) and forwards the cached copy until the extension's provider replaces it. After an upgrade that changes the provider's answer, windows need a reload.
-- **Privacy.** Tool results are sent to the agent's model. Registration can be turned off with `yesterprompt.mcp.enabled`, and the server's instructions ask agents to quote only what the task needs.
+- **Privacy.** Tool results are sent to the agent's model. Registration can be turned off with `promptback.mcp.enabled`, and the server's instructions ask agents to quote only what the task needs.
 - **Reviewed, then corrected.** An independent review found two issues.
-  - A `yester mcp` refresh used default source settings, so it could delete sessions the extension keeps. The index now owns its source settings.
+  - A `promptback mcp` refresh used default source settings, so it could delete sessions the extension keeps. The index now owns its source settings.
   - The step-aside check didn't follow VS Code's discovery rules. Making it follow them was still wrong: the Copilot runtime reads the file regardless, so Agents-window sessions kept getting the tools twice. A probe of VS Code 1.141's extension host showed the real defaults, and the rule is now the plain one above.
 
 ## Review log

@@ -10,6 +10,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 import { type EngineOptions, PromptSearchEngine } from './engine.js';
 import { sessionOpenTargets } from './links.js';
+import { clientLabel, promptSources } from './sources/registry.js';
 import type { PromptOrigin, SearchHit, SessionInfo } from './types.js';
 import { collectGarbage } from './util/gc.js';
 
@@ -22,20 +23,34 @@ const REFRESH_AFTER_MS = 30_000;
 const REFRESH_WAIT_MS = 2_000;
 const IDLE_RELEASE_MS = 5 * 60_000;
 
-const INSTRUCTIONS = `Yesterprompt indexes the prompts this user has sent to AI coding agents (Copilot CLI, the VS Code Agents window, VS Code Chat) across all sessions and repositories.
+/** Server instructions and query help name the sources and clients the registry knows, so new plugins are advertised. */
+function instructions(): string {
+	const sources = promptSources
+		.list()
+		.filter(s => s.clients.length)
+		.map(s => s.label)
+		.join(', ');
+	return `Promptback indexes the prompts this user has sent to AI coding agents (${sources}) across all sessions and repositories.
 Use search_prompts to find something the user asked or decided before, to reuse an earlier prompt, or to recover the context of past work. Then use get_prompt or get_session with the ids it returns.
 Results are the user's own words and may contain private details, so quote only what the task needs.`;
+}
 
-const QUERY_HELP = 'Free text, matched by meaning and keywords, plus optional filters: repo:NAME branch:NAME cwd:PATH after:DATE before:DATE on:DATE '
-	+ '(DATE = 2026-09-30, 2026-09, 7d, 2w, 3m, today, yesterday) client:cli|agent-host|autopilot|chat from:me|agent|skill|system|any '
-	+ 'session:ID model:NAME mode:lex|sem sort:recent "exact phrase" -excluded. An empty query lists the most recent prompts.';
-
-const CLIENTS: Readonly<Record<string, string>> = {
-	'vscode-agent-host': 'Agents window',
-	'github/cli': 'Copilot CLI',
-	'github/autopilot': 'autopilot',
-	'vscode-chat': 'VS Code Chat',
-};
+function queryHelp(): string {
+	const clients = promptSources
+		.list()
+		.flatMap(s => s.clients.map(c => c.aliases[0] ?? c.id))
+		.join('|');
+	const sources = promptSources
+		.list()
+		.filter(s => s.clients.length)
+		.map(s => s.id)
+		.join('|');
+	return (
+		'Free text, matched by meaning and keywords, plus optional filters: repo:NAME branch:NAME cwd:PATH after:DATE before:DATE on:DATE ' +
+		`(DATE = 2026-09-30, 2026-09, 7d, 2w, 3m, today, yesterday) client:${clients} src:${sources} from:me|agent|skill|system|any ` +
+		'session:ID model:NAME mode:lex|sem sort:recent "exact phrase" -excluded. An empty query lists the most recent prompts.'
+	);
+}
 
 const AUTHORS: Readonly<Record<PromptOrigin, string>> = {
 	human: 'the user',
@@ -55,7 +70,8 @@ export interface McpServerOptions {
 
 /** Builds the server and its tools; the caller connects a transport. */
 export function createMcpServer(engine: PromptSearchEngine, opts: McpServerOptions = {}): McpServer {
-	const server = new McpServer({ name: 'yesterprompt', title: 'Yesterprompt', version: opts.version ?? '0.0.0' }, { instructions: INSTRUCTIONS });
+	const server = new McpServer({ name: 'promptback', title: 'Promptback', version: opts.version ?? '0.0.0' }, { instructions: instructions() });
+	const QUERY_HELP = queryHelp();
 	const refresh = opts.refresh ?? (() => Promise.resolve());
 
 	server.registerTool('search_prompts', {
@@ -187,7 +203,7 @@ export function createMcpServer(engine: PromptSearchEngine, opts: McpServerOptio
 export async function serveMcp(opts: Omit<EngineOptions, 'log' | 'embeddingProvider'> = {}, version?: string): Promise<void> {
 	// stdout carries the protocol, so stray console output must go to stderr.
 	console.log = console.info = console.debug = console.error;
-	const log = (m: string) => console.error(`[yesterprompt] ${m}`);
+	const log = (m: string) => console.error(`[promptback] ${m}`);
 	const engine = PromptSearchEngine.open({ ...opts, log });
 
 	let lastRefresh = 0;
@@ -261,7 +277,7 @@ function where(s: SessionInfo): string {
 	const place = s.repository
 		? `${s.repository}${s.repositoryInferred ? ' (inferred)' : ''}`
 		: s.cwd ?? s.workspaceUri ?? (s.workspaceless ? 'no folder' : undefined);
-	return [place, s.branch, s.client && (CLIENTS[s.client] ?? s.client)].filter(Boolean).join(' · ');
+	return [place, s.branch, s.client && clientLabel(s.client)].filter(Boolean).join(' · ');
 }
 
 function titled(s: SessionInfo): string {

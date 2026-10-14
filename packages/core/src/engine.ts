@@ -2,33 +2,36 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createEmbeddingProvider } from './embed/index.js';
-import { DEFAULT_LOCAL_MODEL } from './embed/models.js';
-import type { EmbeddingConfig, EmbeddingProvider } from './embed/provider.js';
-import { copilotHome as defaultCopilotHome, defaultIndexDir, vscodeUserDataRoots } from './paths.js';
+import type { EmbeddingProvider } from './embed/provider.js';
+import { type EmbeddingConfig, NO_EMBEDDING, createEmbeddingProvider } from './embed/registry.js';
+import { defaultIndexDir } from './paths.js';
+import { type PluginOptionsError, type Registry, parseOptions } from './registry.js';
 import { type ChunkOptions, DEFAULT_CHUNK_OPTIONS, chunkText } from './search/chunk.js';
 import { CorpusCache } from './search/corpus.js';
 import { DEFAULT_RANKING, type RankingOptions, Searcher, wantsDense } from './search/searcher.js';
-import { type AgentHostDbState, listAgentHostDbs, readAgentHostDb } from './sources/agentHost.js';
-import { type CopilotFileState, copilotSessionKey, listCopilotSessions, readCopilotEvents, readCopilotSessionInfo } from './sources/copilot.js';
-import { listChatSessionFiles, readChatSession } from './sources/vscodeChat.js';
+import type { PromptSourcePlugin, SourceContext } from './sources/base.js';
+import { promptSources } from './sources/registry.js';
 import { type PromptMeta, Store, type StoredPrompt } from './store.js';
 import type { ExploreResult, IndexStatus, PromptOrigin, PromptRecord, RecentSession, SearchQuery, SearchResult, SessionInfo, SyncProgress, SyncResult } from './types.js';
+import { errorMessage, yieldToLoop } from './util/fs.js';
+
+/** Per-source options by source id, each validated by that source's schema (`enabled` is common to all). */
+export type SourceOptionsById = Readonly<Record<string, unknown>>;
 
 export interface EngineOptions {
 	/** Directory for `index.db` and downloaded models. Shared by every window/process. */
 	readonly indexDir?: string;
 	/**
-	 * Copilot home (`~/.copilot`); `null` disables the Copilot source.
-	 * This, {@link vscodeChat} and {@link retainDeleted} are saved in the index whenever any of them is given (the VS Code
-	 * extension always passes them). A process that passes none (the CLI and its MCP server) uses the saved values, so every
-	 * process that syncs a shared index indexes the same sources and keeps the same deleted sessions.
+	 * Options per prompt source (`copilot`, `vscode-chat`, `agent-host`, `claude-code`, `codex`, ...). Sources not
+	 * listed use their defaults (enabled). When given, this and {@link retainDeleted} are saved in the index (the VS Code
+	 * extension always passes them); a process that passes neither (the CLI and its MCP server) uses the saved values, so
+	 * every process that syncs a shared index indexes the same sources and keeps the same deleted sessions.
 	 */
-	readonly copilotHome?: string | null;
-	/** VS Code user-data roots; `null` disables VS Code chat + agent-host sources. */
-	readonly vscodeRoots?: readonly { product: string; root: string }[] | null;
-	/** Index VS Code Chat panel sessions (default true). Agents-window links are still resolved when false. */
-	readonly vscodeChat?: boolean;
+	readonly sources?: SourceOptionsById;
+	/** Keep prompts whose source session was deleted from disk. */
+	readonly retainDeleted?: boolean;
+	/** Which sources exist; defaults to the global registry with the built-ins. */
+	readonly sourceRegistry?: Registry<PromptSourcePlugin>;
 	readonly embedding?: EmbeddingConfig;
 	/** A pre-built provider (takes precedence over `embedding`); useful for hosts and tests. */
 	readonly embeddingProvider?: EmbeddingProvider;
@@ -40,8 +43,6 @@ export interface EngineOptions {
 	readonly embedOrigins?: readonly PromptOrigin[];
 	readonly ranking?: Partial<RankingOptions>;
 	readonly chunking?: Partial<ChunkOptions>;
-	/** Keep prompts whose source session was deleted from disk. */
-	readonly retainDeleted?: boolean;
 	readonly log?: (message: string) => void;
 }
 
@@ -54,14 +55,39 @@ export interface SyncOptions {
 const LEASE_TTL = 5 * 60_000;
 const EMBED_BATCH = 64;
 
-/** The source options saved in an index (see {@link EngineOptions.copilotHome}). */
+/** What `meta.sources` holds. Version 2; version 1 (`{ copilotHome, vscodeChat, retainDeleted }`) is still read. */
 interface SourceSettings {
-	/** Absent = the default Copilot home; `null` = Copilot source off. */
-	readonly copilotHome?: string | null;
-	readonly vscodeChat: boolean;
+	readonly v: 2;
 	readonly retainDeleted: boolean;
+	readonly sources: SourceOptionsById;
 }
 
+interface LegacySourceSettings {
+	readonly copilotHome?: string | null;
+	readonly vscodeChat?: boolean;
+	readonly retainDeleted?: boolean;
+}
+
+/** Maps the version-1 shape onto per-source options. */
+export function migrateSourceSettings(saved: unknown): SourceSettings {
+	if (!saved || typeof saved !== 'object') {
+		return { v: 2, retainDeleted: false, sources: {} };
+	}
+	const s = saved as Partial<SourceSettings> & LegacySourceSettings;
+	if (s.v === 2 && s.sources && typeof s.sources === 'object') {
+		return { v: 2, retainDeleted: s.retainDeleted === true, sources: s.sources };
+	}
+	const sources: Record<string, unknown> = {};
+	if (s.copilotHome === null) {
+		sources['copilot'] = { enabled: false };
+	} else if (typeof s.copilotHome === 'string') {
+		sources['copilot'] = { home: s.copilotHome };
+	}
+	if (s.vscodeChat === false) {
+		sources['vscode-chat'] = { enabled: false };
+	}
+	return { v: 2, retainDeleted: s.retainDeleted === true, sources };
+}
 /**
  * Transport-neutral facade over ingestion, indexing and search. The VS Code extension, the CLI and the MCP server
  * are thin adapters over this class.
@@ -80,14 +106,14 @@ export class PromptSearchEngine {
 	private lastErrors: string[] = [];
 	private embeddingPaused = false;
 	private syncing: Promise<SyncResult> | undefined;
-	/** Set when session metadata (title, repo, ...) was written, so search caches reload even without prompt changes. */
-	private sessionsChanged = false;
 	private readonly closing = new AbortController();
+	private readonly sources: Registry<PromptSourcePlugin>;
 
 	private constructor(private readonly opts: EngineOptions) {
 		this.indexDir = opts.indexDir ?? defaultIndexDir();
 		this.store = new Store(path.join(this.indexDir, 'index.db'));
 		this.chunkOpts = { ...DEFAULT_CHUNK_OPTIONS, ...opts.chunking };
+		this.sources = opts.sourceRegistry ?? promptSources;
 		this.corpus = new CorpusCache(this.store, () => this.provider);
 		this.searcher = new Searcher(this.store, this.corpus, () => this.provider, { ...DEFAULT_RANKING, ...opts.ranking });
 	}
@@ -97,7 +123,7 @@ export class PromptSearchEngine {
 	}
 
 	private get embeddingConfig(): EmbeddingConfig {
-		return this.opts.embedding ?? { kind: 'local', model: DEFAULT_LOCAL_MODEL };
+		return this.opts.embedding ?? { kind: 'local' };
 	}
 
 	private log(m: string): void {
@@ -133,7 +159,7 @@ export class PromptSearchEngine {
 				}
 				return p;
 			} catch (e) {
-				this.providerError = `Embedding model unavailable: ${errMsg(e)}`;
+				this.providerError = `Embedding model unavailable: ${errorMessage(e)}`;
 				this.log(this.providerError);
 				return undefined;
 			} finally {
@@ -172,34 +198,55 @@ export class PromptSearchEngine {
 	private async doSync(opts: SyncOptions): Promise<SyncResult> {
 		const t0 = Date.now();
 		const errors: string[] = [];
-		let added = 0, removed = 0, embedded = 0;
+		let added = 0;
+		let removed = 0;
+		let embedded = 0;
 		if (!this.store.tryAcquireLease(this.owner, LEASE_TTL)) {
 			this.log('Another process is indexing; using its results.');
 			return { addedPrompts: 0, removedPrompts: 0, embeddedChunks: 0, pendingChunks: 0, errors: [], tookMs: 0, leader: false };
 		}
 		try {
 			opts.onProgress?.({ phase: 'scan', message: 'Scanning prompt history…' });
-			const chunker = (text: string) => chunkText(text, this.chunkOpts);
-			const sources = this.sourceSettings();
-
-			const home = sources.copilotHome === undefined ? defaultCopilotHome() : sources.copilotHome;
-			if (home) {
-				const r = await this.syncCopilot(home, chunker, errors, sources.retainDeleted);
-				added += r[0];
-				removed += r[1];
-			}
-			const roots = this.opts.vscodeRoots === undefined ? vscodeUserDataRoots() : this.opts.vscodeRoots;
-			if (roots) {
-				if (sources.vscodeChat) {
-					const r = await this.syncVscodeChat(roots, chunker, errors, sources.retainDeleted);
-					added += r[0];
-					removed += r[1];
+			const settings = this.sourceSettings();
+			const ctx: SourceContext = {
+				store: this.store,
+				chunker: (text: string) => chunkText(text, this.chunkOpts),
+				retainDeleted: settings.retainDeleted,
+				signal: this.closing.signal,
+				log: m => this.log(m),
+				yieldToLoop,
+			};
+			let sessionsChanged = false;
+			for (const source of this.sources.list()) {
+				if (this.closing.signal.aborted) {
+					break;
 				}
-				await this.syncAgentHostLinks(roots, errors);
+				let options: { enabled: boolean };
+				try {
+					options = parseOptions(this.sources.kind, source, settings.sources[source.id]) as { enabled: boolean };
+				} catch (e) {
+					errors.push((e as PluginOptionsError).message);
+					continue;
+				}
+				if (!options.enabled) {
+					continue;
+				}
+				const t = Date.now();
+				try {
+					const r = await source.sync(options, ctx);
+					added += r.added;
+					removed += r.removed;
+					sessionsChanged ||= r.sessionsChanged;
+					errors.push(...r.errors);
+					if (r.added || r.removed || r.sessionsChanged) {
+						this.log(`${source.label}: +${r.added} / -${r.removed} prompts in ${Date.now() - t} ms`);
+					}
+				} catch (e) {
+					errors.push(`${source.label}: ${errorMessage(e)}`);
+				}
 			}
 			this.log(`Scanned sources in ${Date.now() - t0} ms (+${added} / -${removed} prompts)`);
-			if (added || removed || this.sessionsChanged) {
-				this.sessionsChanged = false;
+			if (added || removed || sessionsChanged) {
 				this.bumpRevision();
 			}
 			if (removed && this.provider) {
@@ -224,185 +271,40 @@ export class PromptSearchEngine {
 		return this.opts.embedOrigins ?? ['human'];
 	}
 
-	/** Saves the source options when any are given; otherwise uses the saved ones (defaults for a new index). Call under the lease. */
+	/**
+	 * Saves the source options when any are given; otherwise uses the saved ones (defaults for a new index). Call under
+	 * the lease. Options for sources this build does not know are kept, so an older and a newer build can share an index.
+	 */
 	private sourceSettings(): SourceSettings {
-		const { copilotHome, vscodeChat, retainDeleted } = this.opts;
-		if (copilotHome !== undefined || vscodeChat !== undefined || retainDeleted !== undefined) {
-			const given: SourceSettings = { copilotHome, vscodeChat: vscodeChat !== false, retainDeleted: retainDeleted === true };
+		const { sources, retainDeleted } = this.opts;
+		if (sources !== undefined || retainDeleted !== undefined) {
+			const given: SourceSettings = { v: 2, retainDeleted: retainDeleted === true, sources: sources ?? {} };
 			this.store.setMeta('sources', JSON.stringify(given));
 			return given;
 		}
-		let saved: Partial<Record<keyof SourceSettings, unknown>> = {};
+		let saved: unknown;
 		try {
-			saved = JSON.parse(this.store.getMeta('sources') ?? '{}') ?? {};
+			saved = JSON.parse(this.store.getMeta('sources') ?? '{}');
 		} catch {
 			// Unreadable: use the defaults.
 		}
-		return {
-			copilotHome: typeof saved.copilotHome === 'string' || saved.copilotHome === null ? saved.copilotHome : undefined,
-			vscodeChat: saved.vscodeChat !== false,
-			retainDeleted: saved.retainDeleted === true,
-		};
+		return migrateSourceSettings(saved);
 	}
 
+	/** The source plugins and the options they would run with (validated), for status displays. */
+	describeSources(): { readonly id: string; readonly label: string; readonly enabled: boolean; readonly options: unknown; readonly error?: string }[] {
+		const settings = this.sourceSettings();
+		return this.sources.list().map(source => {
+			try {
+				const options = parseOptions(this.sources.kind, source, settings.sources[source.id]) as { enabled: boolean };
+				return { id: source.id, label: source.label, enabled: options.enabled, options };
+			} catch (e) {
+				return { id: source.id, label: source.label, enabled: false, options: settings.sources[source.id], error: errorMessage(e) };
+			}
+		});
+	}
 	private bumpRevision(): void {
 		this.store.setMeta('revision', `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-	}
-
-	private async syncCopilot(home: string, chunker: (t: string) => ReturnType<typeof chunkText>, errors: string[], retainDeleted: boolean): Promise<[number, number]> {
-		let added = 0, removed = 0;
-		const sessions = listCopilotSessions(home);
-		const seen = new Set<string>();
-		const eventStates = this.store.loadFileStates<CopilotFileState>('copilot-events');
-		const yamlStates = this.store.loadFileStates<{ mtimeMs: number }>('copilot-yaml');
-		for (const [i, s] of sessions.entries()) {
-			seen.add(s.eventsPath);
-			try {
-				const prev = eventStates.get(s.eventsPath);
-				const res = readCopilotEvents(s, prev, home);
-				const yamlMtime = mtime(s.yamlPath);
-				const prevYaml = yamlStates.get(s.yamlPath);
-				// v2: session metadata now includes derived repositories; re-read every yaml once.
-				const yamlChanged = yamlMtime !== prevYaml?.mtimeMs || (prevYaml as { v?: number } | undefined)?.v !== 2;
-				if (!res && !yamlChanged) {
-					continue;
-				}
-				const hasPrompts = (res?.prompts.length ?? 0) > 0 || (prev?.seq ?? 0) > 0;
-				this.store.transaction(() => {
-					if (hasPrompts && (yamlChanged || res)) {
-						this.store.upsertSession(readCopilotSessionInfo(s, res?.state ?? prev, home));
-						this.sessionsChanged = true;
-					}
-					if (res) {
-						if (res.reset && prev) {
-							const [a, r] = this.store.replaceSessionPrompts(copilotSessionKey(s.sessionId), res.prompts, chunker);
-							added += a;
-							removed += r;
-						} else {
-							added += this.store.insertPrompts(res.prompts, chunker);
-						}
-						this.store.setFileState(s.eventsPath, 'copilot-events', res.state);
-						if (res.oversized) {
-							errors.push(`${s.eventsPath}: ${res.oversized} oversized prompt line(s) skipped`);
-						}
-					}
-					this.store.setFileState(s.yamlPath, 'copilot-yaml', { mtimeMs: yamlMtime, v: 2 });
-				});
-			} catch (e) {
-				errors.push(`${s.eventsPath}: ${errMsg(e)}`);
-			}
-			if (i % 25 === 0) {
-				await yieldToLoop();
-				if (this.closing.signal.aborted) {
-					return [added, removed];
-				}
-			}
-		}
-		if (!retainDeleted) {
-			for (const file of eventStates.keys()) {
-				if (!seen.has(file) && !fs.existsSync(file)) {
-					const sessionId = path.basename(path.dirname(file));
-					removed += this.store.transaction(() => {
-						this.store.deleteFile(file);
-						this.store.deleteFile(path.join(path.dirname(file), 'workspace.yaml'));
-						return this.store.deleteSession(copilotSessionKey(sessionId));
-					});
-				}
-			}
-		}
-		return [added, removed];
-	}
-
-	private async syncVscodeChat(roots: readonly { product: string; root: string }[], chunker: (t: string) => ReturnType<typeof chunkText>, errors: string[], retainDeleted: boolean): Promise<[number, number]> {
-		let added = 0, removed = 0;
-		const seen = new Set<string>();
-		const states = this.store.loadFileStates<{ size: number; mtimeMs: number; key: string; v?: number }>('vscode-chat');
-		for (const { product, root } of roots) {
-			for (const file of listChatSessionFiles(product, root)) {
-				seen.add(file.path);
-				try {
-					const st = fs.statSync(file.path);
-					const prev = states.get(file.path);
-					if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs && prev.v === 2) {
-						continue;
-					}
-					const { session, prompts } = readChatSession(file);
-					this.store.transaction(() => {
-						if (prompts.length) {
-							this.store.upsertSession(session);
-							this.sessionsChanged = true;
-						}
-						const [a, r] = this.store.replaceSessionPrompts(session.key, prompts, chunker);
-						added += a;
-						removed += r;
-						this.store.setFileState(file.path, 'vscode-chat', { size: st.size, mtimeMs: st.mtimeMs, key: session.key, v: 2 });
-					});
-				} catch (e) {
-					errors.push(`${file.path}: ${errMsg(e)}`);
-				}
-				await yieldToLoop();
-				if (this.closing.signal.aborted) {
-					return [added, removed];
-				}
-			}
-		}
-		if (!retainDeleted) {
-			for (const [file, prev] of states) {
-				if (!seen.has(file) && !fs.existsSync(file)) {
-					removed += this.store.transaction(() => {
-						this.store.deleteFile(file);
-						return prev.key ? this.store.deleteSession(prev.key) : 0;
-					});
-				}
-			}
-		}
-		return [added, removed];
-	}
-
-	/** Maps Copilot SDK session ids to Agents-window sessions (cached by db/wal mtime; cold read of ~1.4k dbs takes seconds). */
-	private async syncAgentHostLinks(roots: readonly { product: string; root: string }[], errors: string[]): Promise<void> {
-		const links: { sdkSessionId: string; agentHostSessionId: string; product: string; chatId?: string; title?: string }[] = [];
-		let changed = false;
-		const seen = new Set<string>();
-		const states = this.store.loadFileStates<AgentHostDbState>('agent-host');
-		for (const { product, root } of roots) {
-			for (const [i, { agentHostSessionId, dbPath }] of listAgentHostDbs(root).entries()) {
-				const m = Math.max(mtime(dbPath) ?? -1, mtime(`${dbPath}-wal`) ?? -1);
-				if (m < 0) {
-					continue;
-				}
-				seen.add(dbPath);
-				let st = states.get(dbPath);
-				if (!st || st.mtimeMs !== m) {
-					try {
-						st = { mtimeMs: m, size: 0, ...readAgentHostDb(dbPath) };
-					} catch (e) {
-						st = { mtimeMs: m, size: 0, links: [] };
-						if (!/no such table/i.test(errMsg(e))) {
-							errors.push(`${dbPath}: ${errMsg(e)}`);
-						}
-					}
-					this.store.setFileState(dbPath, 'agent-host', st);
-					changed = true;
-				}
-				for (const l of st.links) {
-					links.push({ sdkSessionId: l.sdkSessionId, agentHostSessionId, product, chatId: l.chatId, title: st.title });
-				}
-				if (i % 50 === 0) {
-					await yieldToLoop();
-				}
-			}
-		}
-		for (const file of states.keys()) {
-			if (!seen.has(file)) {
-				this.store.deleteFile(file);
-				changed = true;
-			}
-		}
-		if (changed) {
-			this.store.transaction(() => this.store.replaceAgentHostLinks(links));
-			this.bumpRevision();
-		}
 	}
 
 	private async embedPending(opts: SyncOptions, errors: string[]): Promise<number> {
@@ -427,7 +329,7 @@ export class PromptSearchEngine {
 			try {
 				vecs = await provider.embedDocuments(batch.map(b => b.text));
 			} catch (e) {
-				errors.push(`Embedding failed: ${errMsg(e)}`);
+				errors.push(`Embedding failed: ${errorMessage(e)}`);
 				break;
 			}
 			this.store.transaction(() => this.store.saveEmbeddings(fp, batch.map((b, i) => ({ hash: b.hash, vector: vecs[i]! }))));
@@ -468,7 +370,7 @@ export class PromptSearchEngine {
 
 	/** Starts loading the embedding model; resolves when loaded or after `maxWaitMs`. */
 	async warm(maxWaitMs = 0): Promise<void> {
-		if (this.provider || this.embeddingConfig.kind === 'none') {
+		if (this.provider || this.embeddingConfig.kind === NO_EMBEDDING) {
 			return;
 		}
 		const loading = this.ensureProvider();
@@ -579,20 +481,4 @@ export class PromptSearchEngine {
 		this.provider = undefined;
 		this.store.close();
 	}
-}
-
-function mtime(p: string): number | undefined {
-	try {
-		return fs.statSync(p, { throwIfNoEntry: false })?.mtimeMs;
-	} catch {
-		return undefined;
-	}
-}
-
-function errMsg(e: unknown): string {
-	return e instanceof Error ? e.message : String(e);
-}
-
-function yieldToLoop(): Promise<void> {
-	return new Promise(resolve => setImmediate(resolve));
 }

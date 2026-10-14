@@ -1,17 +1,17 @@
 {
-  "name": "@yesterprompt/cli",
+  "name": "promptback",
   "version": "0.5.1",
   "private": true,
-  "description": "Yesterprompt from the terminal: index, search and inspect your prompt history.",
+  "description": "Promptback from the terminal: index, search and inspect your prompt history.",
   "type": "module",
   "bin": {
-    "yester": "dist/cli.js",
-    "yesterprompt": "dist/cli.js"
+    "promptback": "dist/cli.js",
+    "promptback": "dist/cli.js"
   },
   "scripts": {
     "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/cli.js --external:onnxruntime-node --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\""
   },
   "dependencies": {
-    "@yesterprompt/core": "*"
+    "@promptback/core": "*"
   }
 }

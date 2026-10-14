@@ -26,7 +26,7 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 }
 
 beforeEach(async () => {
-	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yesterprompt-mcp-'));
+	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'promptback-mcp-'));
 	const home = path.join(tmp, 'copilot');
 	writeSession(home, 'sess-alpha', 'id: sess-alpha\nrepository: owner/webapp\nbranch: main\ncwd: c:\\src\\webapp\nclient_name: github/cli\nname: Flaky tests\n', [
 		{ content: 'Fix the flaky retry_policy test in the HTTP client', id: 'a1', ts: '2026-09-01T10:00:00.000Z' },
@@ -36,7 +36,17 @@ beforeEach(async () => {
 	writeSession(home, 'sess-beta', 'id: sess-beta\nrepository: owner/docs\nclient_name: vscode-agent-host\nname: Design doc\n', [
 		{ content: 'Write a design doc for the tree view', id: 'b1', ts: '2026-09-02T10:00:00.000Z' },
 	]);
-	engine = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), copilotHome: home, vscodeRoots: null, embedding: { kind: 'none' } });
+	engine = PromptSearchEngine.open({
+		indexDir: path.join(tmp, 'index'),
+		sources: {
+			copilot: { home },
+			'vscode-chat': { enabled: false },
+			'agent-host': { enabled: false },
+			'claude-code': { enabled: false },
+			codex: { enabled: false },
+		},
+		embedding: { kind: 'none' },
+	});
 	await engine.sync();
 	const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 	await createMcpServer(engine, { version: 'test' }).connect(serverSide);

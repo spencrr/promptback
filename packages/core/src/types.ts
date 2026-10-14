@@ -1,5 +1,38 @@
-/** Where a prompt was recorded. */
-export type SourceKind = 'copilot' | 'vscode-chat';
+/**
+ * Id of the prompt source a session was read from: the id of a registered source plugin (`copilot`, `vscode-chat`,
+ * `claude-code`, `codex`, ...). Stored in the index as text, so the type is open.
+ */
+export type SourceKind = string;
+
+/** A client program that sends prompts, as declared by the source plugin that reads its sessions. */
+export interface ClientInfo {
+	/** Value of {@link SessionInfo.client}, e.g. `github/cli`. */
+	readonly id: string;
+	/** Short label for facets and pills, e.g. `Copilot CLI`. */
+	readonly label: string;
+	/** Codicon name, e.g. `terminal`. */
+	readonly icon: string;
+	/** VS Code chart colour (`--vscode-charts-<color>`) used to tint the client's pill. */
+	readonly color: 'blue' | 'green' | 'orange' | 'purple' | 'red' | 'yellow' | 'foreground';
+	/** Words accepted by the `client:` query operator besides the id. */
+	readonly aliases: readonly string[];
+}
+
+/** A source plugin as the UI sees it: id, label and the clients it produces. */
+export interface SourceDescriptor {
+	readonly id: SourceKind;
+	readonly label: string;
+	readonly description: string;
+	/** Words accepted by the `src:` query operator besides the id. */
+	readonly aliases: readonly string[];
+	readonly clients: readonly ClientInfo[];
+}
+
+/** Everything the UI needs to label sources and clients; built from the source registry. */
+export interface SourceCatalog {
+	readonly sources: readonly SourceDescriptor[];
+	readonly clients: Readonly<Record<string, ClientInfo>>;
+}
 
 /**
  * Who authored a prompt.
@@ -27,7 +60,7 @@ export interface SessionInfo {
 	/** The session had no folder (e.g. an Agents-window chat started without a workspace). */
 	readonly workspaceless?: boolean;
 	readonly branch?: string;
-	/** Copilot `client_name` (e.g. `vscode-agent-host`, `github/cli`) or `vscode-chat`. */
+	/** The program the prompts were sent from: a {@link ClientInfo.id} such as `github/cli`, `vscode-chat`, `claude/cli`. */
 	readonly client?: string;
 	/** VS Code product folder (`Code`, `Code - Insiders`) for VS Code-owned data. */
 	readonly product?: string;
@@ -62,7 +95,7 @@ export interface SearchFilters {
 	/** Substring match (case-insensitive) on repository (falls back to cwd), e.g. `PyRIT`. */
 	readonly repo?: string;
 	readonly branch?: string;
-	/** Substring match on client (`vscode-agent-host`, `github/cli`, `github/autopilot`, `vscode-chat`). */
+	/** Substring match on client id (`vscode-agent-host`, `github/cli`, `vscode-chat`, `claude/cli`, ...). */
 	readonly client?: string;
 	readonly source?: SourceKind;
 	/** Substring match on cwd / workspace. */

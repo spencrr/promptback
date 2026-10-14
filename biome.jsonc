@@ -1,0 +1,178 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "root": true,
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+    "defaultBranch": "main"
+  },
+  "files": {
+    "includes": ["**", "!**/dist", "!**/package-lock.json", "!packages/vscode/models"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "tab",
+    "indentWidth": 4,
+    "lineWidth": 120,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "arrowParentheses": "asNeeded",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "json": {
+    // npm rewrites package.json with two spaces; keep every JSON file on that style to avoid churn.
+    "formatter": {
+      "indentStyle": "space",
+      "indentWidth": 2
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "domains": {
+      "project": "all",
+      "test": "all",
+      // The webview is Preact: React's hook and JSX rules apply, the other frameworks' rules do not.
+      "react": "all",
+      "astro": "none",
+      "drizzle": "none",
+      "next": "none",
+      "playwright": "none",
+      "qwik": "none",
+      "reactNative": "none",
+      "solid": "none",
+      "svelte": "none",
+      "tailwind": "none",
+      "turborepo": "none",
+      "vue": "none"
+    },
+    // Every stable group is fully on. A rule is switched off here only when it is wrong for this project
+    // (browser-only rules in a Node code base) or enforces a preference the code base deliberately does not
+    // share; each gets a reason. Inline suppressions are allowed only per file, with a reason.
+    "rules": {
+      "preset": "recommended",
+      "a11y": "on",
+      "complexity": {
+        "preset": "all",
+        // Function size and complexity are judged in review. The ingestion and ranking pipelines are long but
+        // linear; splitting them to satisfy a number would not make them clearer.
+        "noExcessiveCognitiveComplexity": "off",
+        "noExcessiveLinesPerFunction": "off",
+        // `void promise` is the explicit mark for an intentionally un-awaited promise.
+        "noVoid": "off",
+        // Its De Morgan rewrites (`!a && !b` -> `!(a || b)`) read worse.
+        "useSimplifiedLogicExpression": "off"
+      },
+      "correctness": {
+        "preset": "all",
+        // Node code base: builtins, `process` and CommonJS globals (in .cjs files) are fine.
+        "noNodejsModules": "off",
+        "noProcessGlobal": "off",
+        // npm workspaces hoist the dev tooling (vitest, esbuild) to the root manifest, and `vscode` is provided
+        // by the editor host (engines.vscode + @types/vscode). tsc catches a missing dependency.
+        "noUndeclaredDependencies": "off",
+        // tsc resolves every import; Biome cannot resolve `node:sqlite` or the MCP SDK's exports-map subpaths.
+        "noUnresolvedImports": "off",
+        // NodeNext: `.ts` sources are imported with the `.js` suffix they compile to.
+        "useImportExtensions": { "level": "on", "options": { "forceJsExtensions": true } }
+      },
+      "performance": {
+        "preset": "all",
+        // Sequential awaits are intentional: embedding batches bound memory and source scans yield to the loop.
+        "noAwaitInLoops": "off",
+        // core/src/index.ts is the package's public API; esbuild tree-shakes the bundles.
+        "noBarrelFile": "off",
+        "noReExportAll": "off",
+        // Inline handlers are fine in a webview that re-renders a few hundred rows at most.
+        "noJsxPropsBind": "off",
+        // `import * as fs from 'node:fs'` is the Node idiom; builtins are never tree-shaken anyway.
+        "noNamespaceImport": "off",
+        // Regex literals share their compiled form per call site; keeping them next to their use reads better.
+        "useTopLevelRegex": "off"
+      },
+      "security": {
+        "preset": "all",
+        // Entropy heuristic flags setting names and sha256 pins. No secret is stored in this repository; API keys
+        // are read from an environment variable the user names and are never logged (see AGENTS.md).
+        "noSecrets": "off"
+      },
+      "suspicious": {
+        "preset": "all",
+        // stderr is the diagnostics channel everywhere (the MCP server owns stdout). Files whose job is to print
+        // (the CLI, scripts) opt in per file.
+        "noConsole": { "level": "on", "options": { "allow": ["error", "warn"] } },
+        // Preact accepts HTML attribute names (`class`, `autofocus`, `onDblClick`); this rule knows React's.
+        "noUnknownAttribute": "off",
+        // Without type information it misjudges nullable values; every finding here was a false positive.
+        "noUnnecessaryConditions": "off"
+      },
+      "style": {
+        "preset": "all",
+        // React Fast Refresh constraint; the webview is one IIFE bundle without hot reload.
+        "useComponentExportOnlyModules": "off",
+        // Opinion-only rules the code base does not follow.
+        "noContinue": "off",
+        "noExcessiveClassesPerFile": "off",
+        "noExcessiveLinesPerFile": "off",
+        "noHexColors": "off",
+        "noIncrementDecrement": "off",
+        "noJsxLiterals": "off",
+        "noMagicNumbers": "off",
+        "noParameterProperties": "off",
+        "noTernary": "off",
+        "useDestructuring": "off",
+        "useExportsLast": "off",
+        // TypeScript's exhaustiveness check over discriminated unions replaces `default` clauses.
+        "useDefaultSwitchClause": "off",
+        // `noUncheckedIndexedAccess` is on; `!` marks the places where the index is proven in range (hot loops).
+        "noNonNullAssertion": "off",
+        // The webview stylesheet is ordered by component, not by specificity.
+        "noDescendingSpecificity": "off",
+        // Environment access is deliberate and local: index/home locations (paths.ts), the child-process
+        // environment for the host and MCP server, the user-named API-key variable, and integration-test knobs.
+        "noProcessEnv": "off",
+        "useNamingConvention": {
+          "level": "on",
+          "options": {
+            // `OpenAI`, `URL`, ... are fine inside camel/Pascal case.
+            "strictCase": false,
+            "conventions": [
+              // Object literal properties mirror external schemas: MCP tool arguments, ONNX inputs, Copilot
+              // event fields and environment variables.
+              {
+                "selector": { "kind": "objectLiteralProperty" },
+                "formats": ["camelCase", "snake_case", "CONSTANT_CASE"]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      // Tool configuration files must default-export their config.
+      "includes": ["**/*.config.ts", "**/*.config.mjs"],
+      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    },
+    {
+      // CommonJS scripts (VS Code's test runner loads the suite with require()).
+      "includes": ["**/*.cjs"],
+      "linter": { "rules": { "correctness": { "noGlobalDirnameFilename": "off" } } }
+    }
+  ]
+}

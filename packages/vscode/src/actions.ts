@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import type { PromptRecord, SessionInfo } from '@yesterprompt/core';
-import { sessionOpenTargets, type SessionOpenTarget } from '@yesterprompt/core/links';
+import { type PromptRecord, type SessionInfo, clientLabel } from '@promptback/core';
+import { sessionOpenTargets, type SessionOpenTarget } from '@promptback/core/links';
 import type { HostClient } from './hostClient.js';
 
-export const PREVIEW_SCHEME = 'yesterprompt-prompt';
+export const PREVIEW_SCHEME = 'promptback-prompt';
 
 export async function copyPrompt(prompt: PromptRecord): Promise<void> {
 	await vscode.env.clipboard.writeText(prompt.text);
@@ -40,7 +40,7 @@ export class PromptPreviewProvider implements vscode.TextDocumentContentProvider
 		const meta = [
 			s?.title ? `**Session:** ${s.title}` : undefined,
 			`**When:** ${new Date(prompt.timestamp).toLocaleString()}`,
-			s?.client ? `**Client:** ${s.client}` : undefined,
+			s?.client ? `**Client:** ${clientLabel(s.client)}` : undefined,
 			s?.repository ? `**Repo:** ${s.repository}${s.branch ? ` (${s.branch})` : ''}` : undefined,
 			s?.cwd ? `**Folder:** ${s.cwd}` : undefined,
 			prompt.model ? `**Model:** ${prompt.model}` : undefined,
@@ -74,7 +74,10 @@ export async function openSession(session: SessionInfo): Promise<void> {
 			}
 			break;
 		case 'terminal-resume': {
-			const terminal = vscode.window.createTerminal({ name: `Copilot: ${session.title?.slice(0, 30) ?? session.sessionId.slice(0, 8)}`, cwd: target.cwd });
+			const terminal = vscode.window.createTerminal({
+				name: `${clientLabel(session.client)}: ${session.title?.slice(0, 30) ?? session.sessionId.slice(0, 8)}`,
+				cwd: target.cwd,
+			});
 			terminal.show();
 			// Typed but not executed, so the user can review it first.
 			terminal.sendText(target.command!, false);

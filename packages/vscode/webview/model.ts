@@ -3,7 +3,7 @@
  * histogram, colours and the graph model. The host returns every matching occurrence once per query; everything here
  * is instant and local, and unit-tested.
  */
-import type { ExploreResult, ExploreRow, PromptOrigin, SessionInfo } from '@yesterprompt/core/types';
+import type { ClientInfo, ExploreResult, ExploreRow, PromptOrigin, SessionInfo, SourceCatalog } from '@promptback/core/types';
 import type { GraphEdge, GraphNode } from './graph.js';
 
 export type FacetKey = 'origin' | 'client' | 'repo';
@@ -34,20 +34,20 @@ export const DEFAULT_VIEW: ViewState = {
 
 export const NO_FOLDER = 'No folder';
 
-export const CLIENT_LABELS: Record<string, string> = {
-	'vscode-agent-host': 'Agents window',
-	'github/cli': 'Copilot CLI',
-	'github/autopilot': 'Autopilot',
-	'vscode-chat': 'Chat panel',
-};
+/** Clients (where a prompt was sent) as declared by the source plugins; the host sends the catalog with `init`. */
+let clients: Readonly<Record<string, ClientInfo>> = {};
 
-/** Codicon per client, shared with the sidebar. */
-export const CLIENT_ICONS: Record<string, string> = {
-	'vscode-agent-host': 'copilot',
-	'github/cli': 'terminal',
-	'github/autopilot': 'robot',
-	'vscode-chat': 'comment-discussion',
-};
+export function setClientCatalog(catalog: SourceCatalog): void {
+	clients = catalog.clients;
+}
+
+export function clientInfo(id: string | undefined): ClientInfo {
+	return (id && clients[id]) || { id: id ?? 'unknown', label: id ?? 'Unknown', icon: 'history', color: 'foreground', aliases: [] };
+}
+
+export function clientLabel(id: string | undefined): string {
+	return clientInfo(id).label;
+}
 
 export const ORIGIN_LABELS: Record<PromptOrigin, string> = {
 	human: 'You',
@@ -357,7 +357,7 @@ export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number, 
 				return t ? [`t${t.id}`, t.label] : ['other', r.topic === -1 ? 'Other topics' : 'Not clustered'];
 			}
 			case 'repo': return [repoLabel(s), repoLabel(s)];
-			case 'source': return [s?.client ?? 'unknown', CLIENT_LABELS[s?.client ?? ''] ?? s?.client ?? 'unknown'];
+			case 'source': return [s?.client ?? 'unknown', clientLabel(s?.client)];
 			case 'session': return [r.sessionKey, s?.title ?? 'Untitled session'];
 		}
 	};

@@ -1,4 +1,5 @@
-import type { PromptOrigin, SearchFilters, SearchMode, SourceKind } from '../types.js';
+import { sourceAliases } from '../sources/registry.js';
+import type { PromptOrigin, SearchFilters, SearchMode } from '../types.js';
 import { ALL_ORIGINS } from '../types.js';
 
 export interface ParsedQuery {
@@ -24,15 +25,14 @@ const STOPWORDS = new Set(('a an and are as at be but by can could did do does f
 
 const KEYS = new Set(['repo', 'branch', 'cwd', 'path', 'after', 'before', 'on', 'during', 'from', 'src', 'source', 'client', 'session', 'model', 'mode', 'sort', 'is']);
 
-const CLIENT_ALIASES: Record<string, string> = {
-	'agent-host': 'vscode-agent-host',
-	'agents': 'vscode-agent-host',
-	'agent-window': 'vscode-agent-host',
-	'cli': 'github/cli',
-	'autopilot': 'github/autopilot',
-	'chat': 'vscode-chat',
-	'panel': 'vscode-chat',
-};
+/** Mutable parse state that operators update besides the filters. */
+interface OperatorContext {
+	readonly now: number;
+	readonly setMode: (m: SearchMode) => void;
+	readonly setSort: (s: 'relevance' | 'recent') => void;
+	/** `src:` and `client:` vocabularies from the source registry (resolved once per parse). */
+	readonly aliases: ReturnType<typeof sourceAliases>;
+}
 
 /** Tokenizes a query into whitespace-separated pieces, keeping quoted segments (with optional `key:` / `-` prefixes) intact. */
 function splitQuery(q: string): string[] {
@@ -61,6 +61,7 @@ export function parseQuery(raw: string, now = Date.now()): ParsedQuery {
 	const f: Mutable<SearchFilters> = {};
 	let mode: SearchMode | undefined;
 	let sort: 'relevance' | 'recent' = 'relevance';
+	const ctx: OperatorContext = { now, setMode: m => (mode = m), setSort: s => (sort = s), aliases: sourceAliases() };
 
 	for (const tok of splitQuery(raw)) {
 		const neg = tok.startsWith('-') && tok.length > 1;
@@ -69,7 +70,7 @@ export function parseQuery(raw: string, now = Date.now()): ParsedQuery {
 		if (op && KEYS.has(op[1]!.toLowerCase()) && op[2]) {
 			const key = op[1]!.toLowerCase();
 			const value = unquote(op[2]);
-			if (!neg && applyOperator(f, key, value, now, m => (mode = m), s => (sort = s))) {
+			if (!neg && applyOperator(f, key, value, ctx)) {
 				continue;
 			}
 		}
@@ -108,14 +109,8 @@ function unquote(v: string): string {
 	return v.replace(/^"/, '').replace(/"$/, '').trim();
 }
 
-function applyOperator(
-	f: Mutable<SearchFilters>,
-	key: string,
-	value: string,
-	now: number,
-	setMode: (m: SearchMode) => void,
-	setSort: (s: 'relevance' | 'recent') => void,
-): boolean {
+function applyOperator(f: Mutable<SearchFilters>, key: string, value: string, ctx: OperatorContext): boolean {
+	const { now, setMode, setSort } = ctx;
 	switch (key) {
 		case 'repo':
 			f.repo = value;
@@ -134,14 +129,12 @@ function applyOperator(
 			f.model = value;
 			return true;
 		case 'client': {
-			f.client = CLIENT_ALIASES[value.toLowerCase()] ?? value;
+			f.client = ctx.aliases.clients.get(value.toLowerCase()) ?? value;
 			return true;
 		}
 		case 'src':
 		case 'source': {
-			const v = value.toLowerCase();
-			const src: SourceKind | undefined = ['cli', 'copilot', 'agent', 'agents'].includes(v) ? 'copilot'
-				: ['vscode', 'chat', 'panel', 'vscode-chat'].includes(v) ? 'vscode-chat' : undefined;
+			const src = ctx.aliases.sources.get(value.toLowerCase());
 			if (!src) {
 				return false;
 			}

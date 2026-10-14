@@ -30,7 +30,7 @@ export function vscodeUserDataRoots(): { product: string; root: string }[] {
 
 /** Shared, window/profile-independent index directory (the Agents window uses a separate profile, so globalStorage is not shared). */
 export function defaultIndexDir(): string {
-	return process.env['YESTERPROMPT_HOME'] || path.join(os.homedir(), '.yesterprompt');
+	return process.env['PROMPTBACK_HOME'] || path.join(os.homedir(), '.promptback');
 }
 
 export function isDir(p: string): boolean {

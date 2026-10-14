@@ -1,6 +1,6 @@
 import { Fragment } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
-import type { ExploreResult } from '@yesterprompt/core/types';
+import type { ExploreResult } from '@promptback/core/types';
 import type { PromptAction, ToWebview } from '../../src/explorer/messages.js';
 import { ORIGIN_LABELS, relativeTime } from '../model.js';
 import { Highlighted, Icon, RepoChip, SourcePill, TopicChip } from './common.js';

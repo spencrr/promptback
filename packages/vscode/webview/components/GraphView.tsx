@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { ExploreResult } from '@yesterprompt/core/types';
+import type { ExploreResult } from '@promptback/core/types';
 import { ConstellationGraph } from '../graph.js';
 import { type ColorBy, type ViewModel, buildGraph } from '../model.js';
 import { Icon } from './common.js';

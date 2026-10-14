@@ -1,13 +1,9 @@
-import type { IndexStatus, SyncProgress } from '@yesterprompt/core/types';
-import type { IndexAction, IndexSettings } from '../../src/explorer/messages.js';
+import type { IndexStatus, SyncProgress } from '@promptback/core/types';
+import type { IndexAction, IndexChoices, IndexSettings } from '../../src/explorer/messages.js';
 import { relativeTime } from '../model.js';
 import { post } from '../vscode.js';
 import { Icon } from './common.js';
 
-const MODELS: { id: string; label: string; detail: string }[] = [
-	{ id: 'bge-small-en-v1.5', label: 'BGE small (default)', detail: 'Best quality on prompt history benchmarks · 33 MB · local' },
-	{ id: 'all-MiniLM-L6-v2', label: 'MiniLM L6', detail: '~2× faster to index, lower quality · 23 MB · local' },
-];
 const ORIGINS: { id: string; label: string }[] = [
 	{ id: 'human', label: 'Your prompts' },
 	{ id: 'agent', label: 'Agent messages' },
@@ -18,6 +14,8 @@ const ORIGINS: { id: string; label: string }[] = [
 export interface IndexState {
 	readonly status?: IndexStatus & { syncing: boolean };
 	readonly settings?: IndexSettings;
+	/** Registered providers and models, from the host. */
+	readonly choices?: IndexChoices;
 	readonly error?: string;
 	readonly progress?: SyncProgress;
 }
@@ -25,6 +23,7 @@ export interface IndexState {
 /** Index health and embedding controls. Changes are written to settings (the single source of truth). */
 export function IndexPanel({ state, onClose }: { state: IndexState; onClose: () => void }) {
 	const { status: s, settings: cfg, progress } = state;
+	const choices = state.choices ?? { providers: [], models: [] };
 	const set = (key: keyof IndexSettings, value: unknown) => post({ type: 'setSetting', key, value });
 	const act = (action: IndexAction) => post({ type: 'indexAction', action });
 	const pct = s && s.chunks ? Math.round((s.embeddedChunks / s.chunks) * 100) : 0;
@@ -78,17 +77,20 @@ export function IndexPanel({ state, onClose }: { state: IndexState; onClose: () 
 					<label class="field">
 						<span>Embeddings</span>
 						<select value={cfg.provider} onChange={e => set('provider', (e.target as HTMLSelectElement).value)}>
-							<option value="local">Local model (private, on this machine)</option>
-							<option value="openai-compatible">Remote endpoint (OpenAI-compatible)</option>
-							<option value="none">Off (keyword search only)</option>
+							{choices.providers.map(p => (
+								<option key={p.id} value={p.id}>{p.label}{p.local ? '' : ' (remote)'}</option>
+							))}
 						</select>
 					</label>
+					{choices.providers.find(p => p.id === cfg.provider)?.description && (
+						<div class="muted small">{choices.providers.find(p => p.id === cfg.provider)?.description}</div>
+					)}
 					{cfg.provider === 'local' && (
 						<>
 							<div class="field">
 								<span>Model</span>
 								<div class="radio-list">
-									{MODELS.map(m => (
+									{choices.models.map(m => (
 										<label key={m.id} class="radio">
 											<input type="radio" name="model" checked={cfg.model === m.id} onChange={() => set('model', m.id)} />
 											<span><b>{m.label}</b><span class="muted small">{m.detail}</span></span>
@@ -114,7 +116,7 @@ export function IndexPanel({ state, onClose }: { state: IndexState; onClose: () 
 								<span>Model / deployment</span>
 								<input type="text" value={cfg.openaiModel} onChange={e => set('openaiModel', (e.target as HTMLInputElement).value)} />
 							</label>
-							<div class="muted small">API key: set <code>yesterprompt.embedding.openai.apiKeyEnv</code> to the name of an environment variable (keys are never stored in settings).</div>
+							<div class="muted small">API key: set <code>promptback.embedding.openai.apiKeyEnv</code> to the name of an environment variable (keys are never stored in settings).</div>
 						</>
 					)}
 					<div class="field">

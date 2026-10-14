@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'preact/hooks';
 import {
-	CLIENT_LABELS, type FacetKey, ORIGIN_LABELS, type ViewModel, type ViewState, histogram,
+	type FacetKey, ORIGIN_LABELS, type ViewModel, type ViewState, clientLabel, histogram,
 } from '../model.js';
 import { Icon } from './common.js';
 
@@ -10,7 +10,7 @@ type SetView = (f: (v: ViewState) => ViewState) => void;
 export function FacetRail({ vm, view, setView }: { vm: ViewModel; view: ViewState; setView: SetView }) {
 	const sections: { key: FacetKey; title: string; icon: string; label: (v: string) => string; limit: number }[] = [
 		{ key: 'origin', title: 'Author', icon: 'person', label: v => ORIGIN_LABELS[v as keyof typeof ORIGIN_LABELS] ?? v, limit: 10 },
-		{ key: 'client', title: 'Source', icon: 'device-desktop', label: v => CLIENT_LABELS[v] ?? v, limit: 10 },
+		{ key: 'client', title: 'Source', icon: 'device-desktop', label: v => clientLabel(v), limit: 10 },
 		{ key: 'repo', title: 'Repository', icon: 'repo', label: v => v, limit: 12 },
 	];
 	const [expanded, setExpanded] = useState<Record<string, boolean>>({});

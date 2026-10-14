@@ -17,26 +17,6 @@ export interface EmbeddingProvider {
 	dispose(): Promise<void>;
 }
 
-export type EmbeddingConfig =
-	| {
-		readonly kind: 'local';
-		/** Registry id, e.g. `bge-small-en-v1.5`. */
-		readonly model: string;
-		/** Directory containing the model files; when omitted the model is resolved from `searchDirs` or downloaded into `cacheDir`. */
-		readonly modelDir?: string;
-		readonly threads?: number;
-	}
-	| {
-		/** Any OpenAI-compatible `/embeddings` endpoint (OpenAI, Azure OpenAI v1, Foundry, Ollama, LM Studio, ...). */
-		readonly kind: 'openai-compatible';
-		readonly baseUrl: string;
-		readonly model: string;
-		readonly apiKeyEnv?: string;
-		readonly dims?: number;
-		readonly headers?: Readonly<Record<string, string>>;
-	}
-	| { readonly kind: 'none' };
-
 export function l2normalize(v: Float32Array): Float32Array {
 	let s = 0;
 	for (let i = 0; i < v.length; i++) {
