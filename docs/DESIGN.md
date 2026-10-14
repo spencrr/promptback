@@ -17,7 +17,8 @@ This document records the decisions behind this repository. It synthesizes five 
 | Copilot sessions (Agents window, CLI, autopilot) | `~/.copilot/session-state/<sdkSessionId>/events.jsonl` + `workspace.yaml` | Prompts are `type: "user.message"` with `data.content`. `data.source` is absent for typed prompts and set to `agent-*`, `skill-*` or `system` for injected messages. `isAutopilotContinuation` marks auto-continues, which are blank. Forks copy events, including their ids, into new sessions. |
 | VS Code Chat panel | `<appData>/Code[ - Insiders]/User/workspaceStorage/<hash>/chatSessions/*.jsonl` (+ `globalStorage/emptyWindowChatSessions`) | `ObjectMutationLog` (`vs/workbench/contrib/chat/common/model/objectMutationLog.ts`). Kind 0 = replace state, 1 = set at path, 2 = truncate to `i` then append, 3 = set `undefined`. Replay the log, then read `requests[].message.text`. `isSystemInitiated` marks system requests. |
 | Agents-window mapping | `<appData>/Code/agentSessionData/<agentHostId>/session.db` | `session_metadata.defaultChatProviderData.sdkSessionId` (and `peerChats`) maps a Copilot session to its Agents-window session for deep links. |
-| `~/.copilot/session-store.db` | | **Not used.** Its `turns` table is incomplete (1,088 of 2,830 prompts), its FTS has no stemming and mixes in assistant text, and it is a live WAL database owned by the runtime. |
+| Claude Code | `~/.claude/projects/<encoded cwd>/<sessionId>.jsonl` (`$CLAUDE_CONFIG_DIR`) | One JSON object per line; prompts are `type: "user"` with `message.content` as a string or `[{ type: "text", text }]` blocks (`tool_result` blocks are tool output, not prompts). `isSidechain` marks sub-agent conversations (the parent agent's prompts; stored in the same file), `isMeta` and `turnOrigin: "task_notification"` mark injected messages, `promptSource: "sdk"` marks Agent SDK input, `entrypoint` (`cli`, `sdk-ts`, `claude-vscode`) names the client. Injected text starts with a tag (`<task-notification>`, `<command-name>`, `<local-command-stdout>`, `<ide_opened_file>`, …) and compaction inserts "This session is being continued…" as a user message. `ai-title` / `summary` lines carry the title; `assistant` lines carry `message.model`. Measured on 78 files / 36.8 MB: 2,305 user lines, 33 of them typed prompts. |
+| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` and `archived_sessions` (`$CODEX_HOME`) | First line `session_meta` (`id`, `cwd`, `originator` such as `codex_cli_rs` or `vscode_agent_host`, `git.{branch,repository_url}`, `source` is an object for sub-agent threads). Prompts are `response_item` with `payload.type: "message"`, `role: "user"` and `input_text` blocks; older rollouts carry them only as `event_msg` / `user_message`. `turn_context.model` is the model of the following turn. Injected context starts with `<environment_context>`, `<subagent_notification>`, `<turn_aborted>` or `<side-chat-context>`. || `~/.copilot/session-store.db` | | **Not used.** Its `turns` table is incomplete (1,088 of 2,830 prompts), its FTS has no stemming and mixes in assistant text, and it is a live WAL database owned by the runtime. |
 
 ## Architecture
 
@@ -47,10 +48,13 @@ VS Code window(s) / Agents window             CLI (promptback)          MCP serv
 ## Embeddings
 
 - **Provider interface.** `EmbeddingProvider { info: { fingerprint, dims, local }, embedDocuments, embedQuery }`. Vectors are stored per `(fingerprint, chunk-hash)`, so switching models re-embeds in the background, and identical text (forks, re-pastes) is embedded once.
-- **MVP.** `Xenova/bge-small-en-v1.5`, int8 ONNX (32 MB, 384 dims, 512 tokens, CLS pooling). It uses the query prefix `Represent this sentence for searching relevant passages: `, a pinned revision and SHA-256 hashes. It is bundled in the VSIX and runs on native onnxruntime-node (CPU, 4 threads) with the pure-JS `@huggingface/tokenizers`.
+- **MVP.** `Xenova/bge-small-en-v1.5`, int8 ONNX (32 MB, 384 dims, 512 tokens, CLS pooling). It uses the query prefix `Represent this sentence for searching relevant passages: `, a pinned revision and SHA-256 hashes. It is downloaded on first use (see *Model distribution* below) and runs on native onnxruntime-node (CPU, 4 threads) with the pure-JS `@huggingface/tokenizers`.
 - **Alternatives.**
   - `all-MiniLM-L6-v2`: faster, lower quality.
   - `openai-compatible`: Azure OpenAI v1, Foundry, Ollama, LM Studio. This sends text off-box unless it points at loopback.
+  - `hashed`: feature hashing of word unigrams and bigrams into 256 buckets (Weinberger et al. 2009), no model and no native code. It approximates word overlap, so it finds few paraphrases, but it keeps the whole pipeline (vectors, topics, similarity bars) working on platforms without onnxruntime binaries (Intel Macs) and in tests. It is the shipped dependency-free fallback.
+
+- **Model distribution.** Early VSIXes bundled the 33 MB model, so every extension update re-shipped it and the npm CLI could never have it. Now every surface downloads it on first use from the pinned revision and verifies SHA-256, into `~/.promptback/models`, which the CLI, the MCP server and the extension share. Offline machines use `promptback.embedding.modelDir` / a copied folder, `package.mjs --bundle-model` for an offline VSIX, or the `hashed` provider. Downloads are refused for manifests without pinned hashes.
 
 Benchmark from proposal 3: 903 deduped human prompts, 40 normal + 25 hard paraphrase queries, MRR@10.
 
@@ -193,6 +197,27 @@ Design points:
   - A `promptback mcp` refresh used default source settings, so it could delete sessions the extension keeps. The index now owns its source settings.
   - The step-aside check didn't follow VS Code's discovery rules. Making it follow them was still wrong: the Copilot runtime reads the file regardless, so Agents-window sessions kept getting the tools twice. A probe of VS Code 1.141's extension host showed the real defaults, and the rule is now the plain one above.
 
+## Plugin registries
+
+Three concepts were growing `switch` statements and hard-coded tables spread over core, the CLI, the MCP server and the webview: embedding backends, prompt sources and local models. Each is now a `Registry` of plugins (`registry.ts`) whose options are a zod schema, validated once with a readable error (`PluginOptionsError` names the plugin and every bad path).
+
+- **Sources** (`sources/base.ts`) declare their clients (id, label, codicon, chart colour, `client:` aliases) and `src:` aliases. The query parser, the MCP instructions, the CLI, the sidebar and the Explorer (which receives a *catalog* with `init`, since it imports only types from core) all derive from that. `openTargets` lives on the plugin, so `links.ts` is a one-line delegation. Saved source settings moved to a per-source shape (`meta.sources` v2); the flat v1 shape is still read.
+- **Providers** (`embed/registry.ts`): `create(options, env)` returns an `EmbeddingProvider` or `undefined` for keyword-only. The environment carries an injectable `fetch` so tests never touch the network.
+- **Models** (`embed/models.ts`): the pinned specs are validated by the same schema users can write in `<modelDir>/model.json`; manifests without hashes are usable locally but never downloaded.
+
+Plugin interfaces use **method** signatures for `sync`/`create` on purpose: methods are bivariant in their parameters, which is what lets `PromptSourcePlugin<SpecificOptions>` live in a `Registry<PromptSourcePlugin>`. Property-style signatures (what Biome's `useConsistentMethodSignatures` prefers) would reject every concrete plugin.
+
+Sources that read whole files per session (Claude Code, Codex, VS Code Chat) share one loop, `syncSessionFiles`: skip unchanged files by size + mtime + projection version, replace the prompts of changed ones, drop sessions whose file disappeared unless `retainDeleted`. Copilot keeps its byte-cursor reader because its files reach hundreds of MB. The line scanner takes a `headBytes` hint so a plugin can pre-filter lines whose type appears early and parse the rest; Claude Code lines put `"type"` around byte 90–125 but some lines bury it at 70 kB, so unknown heads are parsed rather than skipped.
+
+Verified on this machine's real data (Windows, Node 26): Claude Code + Codex, 261 prompts from 35 sessions, 385 ms cold, 6 ms when nothing changed.
+
+## Toolchain
+
+- **Biome 2** for lint + format + import order, one config (`biome.jsonc`). Every stable group is on with its full preset; the rules that are off each carry a reason in the config (browser-only rules in a Node code base, React-specific attribute rules in a Preact webview, opinion rules such as `noNonNullAssertion` under `noUncheckedIndexedAccess`, and `noUnnecessaryConditions`, which misjudged every nullable value it saw). `useExhaustiveDependencies` reports only missing dependencies: listing a value to re-run an effect is a deliberate Preact idiom here. The Explorer's table keeps ARIA grid roles (`useSemanticElements` is suppressed for that one file) because a virtualized, absolutely positioned, column-resizable grid cannot be a `<table>`; rows and headers are keyboard-operable with a roving tabindex instead.
+- **Biome's unsafe fixes were reviewed line by line**: they rewrote `!!x` to `Boolean(x)` (which loses TypeScript narrowing), deleted `console` calls (`noConsole`'s fix), rewrote `import './styles.css'` to `styles.js` (`useImportExtensions` with `forceJsExtensions`; replaced by explicit `ts → js` mappings) and rewrote hook dependency arrays. Two Biome 2.5.15 false positives are worked around: `noInvalidGridAreas` on single-line multi-row `grid-template-areas` values (now one row per line) and `noSvgWithoutTitle` requiring a `<title>` on the icon.
+- **npm 11.19** blocks dependency install scripts by default. None of ours are needed, so `allowScripts` denies them explicitly. With older npm, onnxruntime-node's postinstall downloads CUDA binaries on linux-x64 unless `ONNXRUNTIME_NODE_INSTALL=skip`.
+- **Pins**: Node floor 22.13.0 (`.node-version`, `@types/node@22` so the type-checked API surface is the floor's), TypeScript 5.9, Vitest 4, esbuild 0.28, onnxruntime-node exactly 1.30.0 (its binaries are the shipped artifact: win32-x64/arm64, linux-x64/arm64, darwin-arm64; no darwin-x64).
+- **Tests are offline by construction**: `test/setup.ts` stubs `fetch` and points every source's default home at an empty folder; the end-to-end test builds and spawns the real CLI and talks to `promptback mcp` over stdio.
 ## Review log
 
 The Explorer plan was critiqued by three independent reviewers (a neutral reviewer, Claude Opus 5.5 and GPT-6 Astra) before implementation. Changes they drove:
@@ -209,4 +234,6 @@ The Explorer plan was critiqued by three independent reviewers (a neutral review
 
 - **Optional cross-encoder rerank** ("Refine"). mxbai-rerank-xsmall helped hard queries but costs ~6 s per query.
 - **Near-duplicate clustering** with MinHash. Only 21 clusters in the current corpus, so it was deferred.
-- **More platforms.** macOS and Linux VSIX targets via `scripts/package.mjs --target`. A WASM fallback provider would cover platforms without onnxruntime binaries.
+- **More sources.** Cursor, Cline/Roo Code, Gemini CLI, Continue, Aider, OpenCode, Windsurf and chat-export imports; candidate locations are listed in the README and need verifying. Each is one plugin file plus a fixture test.
+- **Projection versions for stored flags.** `isAck` is computed when a prompt is inserted; a change to the rule needs a re-classification pass like the one chunking options now trigger.
+- **Intel Macs.** onnxruntime-node 1.30 ships no darwin-x64 binary; the `hashed` provider covers it until a WASM backend is worth its 7× slowdown.

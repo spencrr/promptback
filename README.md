@@ -1,52 +1,109 @@
 # Promptback
 
-**You've asked this before. Find it.**
+**You've asked this before. Get it back.**
 
-Semantic search over every prompt you've sent to your AI coding agents: **Copilot CLI** and **autopilot** sessions, the VS Code **Agents window**, and **VS Code Chat** panel history. Local-first: prompts are embedded on your machine, and nothing leaves it unless you configure a remote embedding endpoint.
+Semantic search over every prompt you've sent to your AI coding agents: **GitHub Copilot** (the VS Code Agents window, Copilot CLI, autopilot), **Claude Code**, **OpenAI Codex** and the **VS Code Chat** panel. Local-first: prompts are indexed and embedded on your machine, and nothing leaves it unless you configure a remote embedding endpoint.
 
 - **Your prompts, not transcripts.** It indexes the messages sent *to* the agent (by default only the ones you typed), not assistant replies or tool output, so every result is something you can reuse.
-- **Hybrid ranking.** Keyword (BM25) and semantic similarity are fused adaptively. On our paraphrase benchmark (25 hard queries over ~900 real prompts) it reached MRR@10 0.51, against 0.19 for keyword search alone ([details](docs/DESIGN.md)).
+- **Hybrid ranking.** Keyword (BM25) and semantic similarity are fused adaptively. On our paraphrase benchmark (25 hard queries over ~900 real prompts) it reached MRR@10 0.51, against 0.19 for keyword search alone ([details](docs/DESIGN.md#embeddings)).
 - **Made to browse.** A full-screen Prompt Explorer with filters, a details pane with session context, and an animated topic graph of each query's results. Copy a prompt, insert it into chat, or resume the session it came from.
-- **Agents can search it too.** An MCP server gives agents read-only tools over your history. VS Code and the Agents window pick it up from the extension automatically; Copilot CLI runs it as `promptback mcp`.
+- **Agents can search it too.** An MCP server gives agents read-only tools over your history. VS Code and the Agents window pick it up from the extension; everything else runs `promptback mcp`.
+- **Pluggable.** Prompt sources, embedding providers and local models are registries with validated options. Adding a source is one file ([how](#extending)).
 
 ## Packages
 
-- **`packages/core`** (`@promptback/core`): ingestion, SQLite index, pluggable embeddings, hybrid ranking and the MCP server. It has no VS Code dependency and is the API that the CLI and the extension share.
-- **`packages/vscode`** (`spencrr.promptback-vscode`): the VS Code extension: Prompt Explorer, quick search, a sidebar, and the MCP server registration. See [its README](packages/vscode/README.md).
-- **`packages/cli`** (`promptback`): index, search and status from a terminal, and `promptback mcp`.
+| Package | What it is | Where it ships |
+|---|---|---|
+| [`packages/vscode`](packages/vscode/README.md) | The VS Code extension (`spencrr.promptback-vscode`): Prompt Explorer, quick search, sidebar, MCP registration | VS Code Marketplace / Open VSX, one VSIX per platform |
+| [`packages/cli`](packages/cli/README.md) | `promptback`: index, search and inspect from a terminal; `promptback mcp` serves the tools over stdio | npm (`promptback`) and the MCP registry (`dev.spencrr/promptback`) |
+| [`packages/core`](packages/core/README.md) | Ingestion, SQLite index, ranking, embeddings, sources and the MCP server. No VS Code dependency | Bundled into the two above; not published on its own |
 
-Design rationale, benchmarks and the five proposals it was synthesized from are in [docs/DESIGN.md](docs/DESIGN.md).
+The three share one index, so whatever indexed your history last is what every surface searches.
 
 ## Quick start
 
-Requires Node ≥ 22.13 (for `node:sqlite`).
+Requires **Node ≥ 22.13** (for `node:sqlite`) and npm ≥ 10. Everything below works offline except the one-time model download.
 
-```powershell
-npm install
-npm test                      # unit + engine tests (synthetic fixtures)
+```sh
+git clone https://github.com/spencrr/promptback.git
+cd promptback
+npm ci
+npm test                                   # 98 tests on synthetic fixtures; never touches your history
 
 # CLI
 npm run build -w packages/cli
-npm link -w packages/cli                     # puts `promptback` on your PATH (undo: npm unlink -g promptback)
-promptback index                                 # first run downloads the pinned model (~33 MB, sha256-verified) and embeds your prompts
-promptback search "that prompt about the tree view design doc" --limit 5
-promptback search "retry_policy repo:PyRIT after:2026-09 mode:lex"
-promptback status
+node packages/cli/dist/cli.js index        # scans ~/.copilot, ~/.claude, ~/.codex and VS Code; first run downloads the model (33 MB, SHA-256-verified)
+node packages/cli/dist/cli.js search "that prompt about the tree view design doc" --limit 5
+node packages/cli/dist/cli.js sources      # which sources are on, and where they read from
+npm link -w packages/cli                   # optional: puts `promptback` on your PATH (undo: npm unlink -g promptback)
 
-# VS Code extension (platform-specific VSIX with bundled model)
-cd packages/vscode
-node scripts/package.mjs --target win32-x64
-code --install-extension promptback-0.5.1-win32-x64.vsix
-node test/integration/runTest.mjs            # runs the extension in an isolated VS Code instance against your real history (read-only)
+# VS Code extension (one VSIX per platform; the model is downloaded on first use)
+node packages/vscode/scripts/package.mjs --target win32-x64     # or linux-x64, linux-arm64, win32-arm64, darwin-arm64
+code --install-extension packages/vscode/promptback-vscode-0.6.0-win32-x64.vsix
 ```
 
-Then press **Ctrl+Alt+E** for the Prompt Explorer, or **Ctrl+Alt+H** for quick search. To use it inside the Agents window, accept the one-time prompt (or run **Promptback: Enable in Agents Window**) and reload that window.
+Then press **Ctrl+Alt+E** (macOS **Cmd+Ctrl+E**) for the Prompt Explorer, or **Ctrl+Alt+H** for quick search. To use it inside the Agents window, accept the one-time prompt (or run **Promptback: Enable in Agents Window**) and reload that window.
 
-Benchmark retrieval quality and latency against your own index with `npm run bench -w packages/core -- --model-dir <dir>`. It reads labelled queries from `packages/core/bench/data/*.local.json`, which are gitignored because they reference private prompts.
+No model, no download: pass `--no-model` to the CLI (keyword search only), or set `promptback.embedding.provider` to `hashed` (word-overlap vectors, works everywhere) or `none`. See [`examples/`](examples/README.md) for runnable scripts, including one that needs nothing beyond Node.
 
-## Query syntax
+### Query syntax
 
-Free text plus `repo:` `branch:` `cwd:` `after:` `before:` `on:` `from:(me|agent|skill|system|any)` `src:(cli|vscode)` `client:(agent-host|cli|autopilot|chat)` `session:` `model:` `mode:(lex|sem)` `sort:recent` `is:ack` `"exact phrase"` `-exclude`.
+Free text plus `repo:` `branch:` `cwd:` `after:` `before:` `on:` `from:(me|agent|skill|system|any)` `src:(copilot|vscode-chat|claude-code|codex)` `client:(agent-host|cli|autopilot|chat|claude|codex)` `session:` `model:` `mode:(lex|sem)` `sort:recent` `is:ack` `"exact phrase"` `-exclude`. Dates accept `2026-09-30`, `2026-09`, `7d`, `2w`, `3m`, `today`, `yesterday`.
+
+## Architecture
+
+```
+VS Code window(s) / Agents window                 promptback (CLI)             MCP clients (stdio)
+  extension host (thin: commands, quick pick,         │                             │
+  Explorer webview, sidebar, MCP registration)        │                             │
+    └─ fork(dist/host.js)                             │                             │
+                      ▼                               ▼                             ▼
+            ┌──────────────────── @promptback/core: PromptSearchEngine ─────────────────────┐
+            │ sources/   registry of readers: copilot, vscode-chat, agent-host links,         │
+            │            claude-code, codex (incremental, read-only)                          │
+            │ embed/     registry of providers: local ONNX (pinned models), openai-compatible, │
+            │            hashed (no model), none; local models have a registry + model.json    │
+            │ store.ts   node:sqlite: prompts, FTS5, chunks, vectors, writer lease, migrations │
+            │ search/    query language, hybrid ranking, topics, fork lineage                  │
+            │ mcp.ts     read-only tools for agents                                             │
+            └──────────────────────────────────────────────────────────────────────────────────┘
+                                                 │
+                        ~/.promptback/index.db  (shared, WAL, single writer at a time)
+```
+
+- **Inputs are read-only.** Session files are only ever read; the index is a separate SQLite file.
+- **One shared index** at `~/.promptback` (override with `PROMPTBACK_HOME`, or `promptback.index.directory` in VS Code). A lease row elects a single writer; everyone else reads. Schema changes are additive, so older and newer builds can share a file.
+- **The index owns its source settings.** The extension saves which sources are on and where they read from; the CLI and `promptback mcp` use the saved settings unless told otherwise, so no process deletes sessions another chose to keep.
+- **No inference in the extension host.** The extension forks a child process with VS Code's own Node; the model loads only for queries that need it and is released when idle.
+
+[docs/DESIGN.md](docs/DESIGN.md) records the decisions: benchmarks, rejected alternatives, review findings.
+
+## Sources
+
+| Source | Reads | Clients it labels |
+|---|---|---|
+| `copilot` | `~/.copilot/session-state/<id>/events.jsonl` + `workspace.yaml` (`$COPILOT_HOME`) | Agents window, Copilot CLI, Autopilot |
+| `vscode-chat` | `<appData>/Code*/User/workspaceStorage/*/chatSessions/*` | Chat panel |
+| `agent-host` | `<appData>/Code*/agentSessionData/*/session.db` (links Copilot sessions to Agents-window sessions; no prompts) | |
+| `claude-code` | `~/.claude/projects/<project>/<session>.jsonl` (`$CLAUDE_CONFIG_DIR`) | Claude Code, Claude Agent SDK, Claude Code (VS Code) |
+| `codex` | `~/.codex/sessions/**/rollout-*.jsonl` and `archived_sessions` (`$CODEX_HOME`) | Codex CLI, Codex exec, Codex (VS Code) |
+
+Each source classifies who wrote a message (`human`, `agent`, `skill`, `system`, `autopilot`), so sub-agent prompts, injected context and slash commands stay out of your results unless you ask (`from:any`). Each session can be reopened: Agents-window deep links, `copilot --resume`, `claude --resume`, `codex resume`, or the chat editor.
+
+### Roadmap: more sources
+
+Candidates, roughly by how many people would benefit. Locations are from public documentation or inspection and should be re-verified before implementing; a source is about 150 lines plus a fixture test (see [Extending](#extending)).
+
+| Tool | Where its history lives (to verify) |
+|---|---|
+| Cursor | `<appData>/Cursor/User/workspaceStorage/*/state.vscdb` (SQLite; chat data in `ItemTable`) and `globalStorage/state.vscdb` |
+| Cline / Roo Code | `<appData>/Code/User/globalStorage/<publisher.extension>/tasks/<id>/api_conversation_history.json` |
+| Gemini CLI | `~/.gemini/tmp/<project-hash>/` session logs |
+| Continue | `~/.continue/sessions/*.json` |
+| Aider | `.aider.chat.history.md` in each repository |
+| OpenCode | `~/.local/share/opencode/` (SQLite) |
+| Windsurf | `<appData>/Windsurf/User/workspaceStorage/*/state.vscdb` |
+| ChatGPT / Claude.ai exports | `conversations.json` from the account export (one-off import rather than a live source) |
 
 ## MCP server
 
@@ -71,17 +128,28 @@ Agents get five read-only tools:
   }
   ```
 
-  When this file defines `promptback`, the extension stops registering its own copy. The Copilot runtime behind Agents-window sessions reads this file itself, and VS Code forwards extension servers to every agent session, so a second copy would give each session the tools twice. VS Code's own chat panel reads the file only when `chat.mcp.discovery.enabled` has `copilot` on, which is off by default in VS Code 1.141. To use the tools there, turn that on (it also brings in your other Copilot CLI servers) or remove the entry.
+  When this file defines `promptback`, the extension stops registering its own copy, because the Copilot runtime behind Agents-window sessions reads this file itself and the tools would appear twice. VS Code's own chat panel reads the file only when `chat.mcp.discovery.enabled` has `copilot` on.
 
-Each agent session starts its own server and keeps it for the session's lifetime, so an idle server holds as little as possible. It picks up new prompts when a tool is called (waiting at most 2 s) and loads the embedding model only for queries that need semantic search; keyword-only and empty queries never load it. After 5 idle minutes it releases the model and its prompt cache. Private memory, measured with Node 26 on Windows: 33 MB idle (Node alone is 19 MB), 148 MB right after a semantic search, 56 MB once released.
+Each agent session starts its own server and keeps it for the session's lifetime, so an idle server holds as little as possible: it refreshes the index when a tool is called (waiting at most 2 s), loads the embedding model only for queries that need it, and releases the model and its prompt cache after 5 idle minutes. Measured on Windows with Node 26: 33 MB private memory idle, 148 MB right after a semantic search, 56 MB once released.
 
 Tool results reach the agent's model like any other context, so a past prompt can end up in a different project or model than the one it was written for.
 
+## Extending
+
+Every pluggable concept is a registry of plugins with a [zod](https://zod.dev) schema for its options, so configuration is validated with readable errors and nothing dispatches on names.
+
+- **A prompt source** implements `PromptSourcePlugin` (`packages/core/src/sources/base.ts`): an `id`, a `label`, an `options` schema extending `baseSourceOptions`, the `clients` it produces (label, icon, colour, query aliases), `sync(options, ctx)` and optionally `openTargets(session)`. `sync` is incremental and idempotent: compare what is on disk with the cursors saved through `ctx.store.loadFileStates`, write only the difference, and drop sessions whose files disappeared unless `ctx.retainDeleted`. Whole-file logs can use the shared `syncSessionFiles` loop (`sources/sessionFiles.ts`); `claudeCode.ts` is the model to copy. Register it with `promptSources.register(plugin)` before opening an engine, and its `src:`/`client:` aliases, labels and icons flow through to the CLI, the MCP server and the Explorer. [`examples/custom-source.ts`](examples/custom-source.ts) does this end to end.
+- **An embedding provider** implements `EmbeddingProviderPlugin` (`packages/core/src/embed/registry.ts`) and returns an `EmbeddingProvider` whose `info.fingerprint` changes whenever its vectors become incomparable. Register it with `embeddingProviders.register(plugin)`; the `hashed` provider is the smallest example.
+- **A local model** is a validated spec (`localModelSpecSchema`). Built-ins are pinned to a Hugging Face revision with SHA-256 hashes. Point `promptback.embedding.modelDir` (or `--model-dir` in the benchmark) at a folder containing the files and a `model.json` with the same shape to use your own ONNX model without changing code.
+
+Ranking parameters (`search/rank.ts`) are deliberately not pluggable: change them only with before/after numbers from `npm run bench -w packages/core`, which needs your own labelled queries in the gitignored `packages/core/bench/data/*.local.json`.
+
 ## Where things live
 
-- **Index:** `~/.promptback/index.db` on every platform, with downloaded models in `~/.promptback/models`. It is shared by every VS Code window, the CLI and the MCP server. Override it with `PROMPTBACK_HOME` (or the `promptback.index.directory` setting, VS Code only). Delete the folder to reset.
-- **Source settings:** the extension saves its `promptback.sources.*` settings (which sources, the Copilot home, keeping deleted sessions) in the index. The CLI and `promptback mcp` use those saved settings, so every process updates the shared index by the same rules.
-- **Read-only inputs:**
-  - `~/.copilot/session-state/*/events.jsonl` and `workspace.yaml`
-  - `<appData>/Code*/User/workspaceStorage/*/chatSessions/*`
-  - `<appData>/Code*/agentSessionData/*/session.db`
+- **Index:** `~/.promptback/index.db` on every platform, with downloaded models in `~/.promptback/models`. Delete the folder to reset.
+- **Source settings:** saved in the index by the extension (`promptback.sources.*`), used by the CLI and `promptback mcp`.
+- **Read-only inputs:** see [Sources](#sources).
+
+## Contributing
+
+`npm run check` runs typecheck, lint (Biome) and the tests; CI runs them on Linux, macOS and Windows with Node 22, 24 and 26 and builds every artifact. [AGENTS.md](AGENTS.md) has the exact commands and the conventions that aren't obvious from the code. Licensed under [MIT](LICENSE).

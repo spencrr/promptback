@@ -1,66 +1,71 @@
 # AGENTS.md
 
-You're working on **Promptback**: local-first semantic search over every prompt a user has sent to AI coding agents (Copilot CLI and autopilot, the VS Code Agents window, VS Code Chat). It indexes the user's own prompts, not whole transcripts. It ranks them with a keyword + embedding hybrid and serves them through a VS Code extension, a CLI (`promptback`) and an MCP server.
+You're working on **Promptback**: local-first semantic search over every prompt a user has sent to AI coding agents (Copilot CLI/autopilot and the VS Code Agents window, Claude Code, Codex, VS Code Chat). It indexes the user's own prompts, not whole transcripts, ranks them with a keyword + embedding hybrid, and serves them through a VS Code extension, a CLI (`promptback`) and an MCP server.
 
-[README.md](README.md) covers usage. [docs/DESIGN.md](docs/DESIGN.md) records why things are the way they are: benchmarks, rejected alternatives and review findings. Read the relevant section before changing ranking, ingestion, the Explorer or MCP.
+[README.md](README.md) covers usage and how to extend. [docs/DESIGN.md](docs/DESIGN.md) records why things are the way they are: benchmarks, rejected alternatives and review findings. Read the relevant section before changing ranking, ingestion, the Explorer or MCP.
+
+## Commands
+
+```
+npm ci                                                       # Node >= 22.13 (node:sqlite), npm >= 10
+npm run check                                                # typecheck + lint + test: run before finishing
+npm run typecheck                                            # 4 tsconfigs: strict, noUnused*, noUncheckedIndexedAccess, verbatimModuleSyntax
+npm run lint                                                 # Biome (lint + format + import order); `npm run lint:fix` applies safe fixes
+npm test                                                     # vitest, offline, on synthetic fixtures; one file: npx vitest run <path>
+npm run build -w packages/cli                                # packages/cli/dist/cli.js (the e2e test builds this itself)
+node packages/vscode/scripts/build.mjs                       # dist/{extension,host,mcp,webview}.js
+node packages/vscode/scripts/package.mjs --target win32-x64  # platform VSIX; add --bundle-model for an offline VSIX
+node packages/vscode/test/integration/runTest.mjs            # real VS Code against the user's real history (read-only), temp index
+npm run bench                                                # retrieval benchmark; needs gitignored packages/core/bench/data/*.local.json
+```
+
+Also run the integration test when you touch the extension, the host, the webview or `protocol.ts`. CI runs lint, the tests on Linux/macOS/Windows × Node 22/24/26, and builds every artifact.
 
 ## Architecture
 
-npm workspaces, TypeScript throughout. `packages/core` ships as TypeScript source (its `exports` map points at `src/*.ts`); the CLI and the extension bundle it with esbuild.
+npm workspaces, TypeScript throughout, one Biome config. `packages/core` ships as TypeScript source (its `exports` map points at `src/*.ts`); the CLI and the extension bundle it with esbuild, so core is never published.
 
 - **`packages/core`** (`@promptback/core`) holds all the logic and must never import `vscode`.
-  - `engine.ts`: `PromptSearchEngine`, the facade every surface calls.
-  - `sources/`: incremental, read-only readers for Copilot `events.jsonl`, VS Code chat mutation logs, and Agents-window `session.db` links.
-  - `store.ts`: the SQLite index (`node:sqlite`, FTS5, embedding BLOBs, writer lease, migrations).
-  - `search/`: the query language (`query.ts`), hybrid ranking (`rank.ts`), topics, and fork lineage (`corpus.ts`). `searcher.ts` has two paths: `search` serves the quick pick (the user's own prompts, duplicates collapsed, capped per session), and `explore` returns every match for the Explorer.
-  - `embed/`: local ONNX models (pinned, SHA-256-verified) and an OpenAI-compatible provider.
-  - `host.ts` and `protocol.ts`: the child process the extension talks to.
-  - `mcp.ts`: the MCP server.
-- **`packages/cli`** (`promptback`): everything is in `src/cli.ts`.
-- **`packages/vscode`** (`spencrr.promptback-vscode`):
-  - `src/extension.ts`: activation, commands, status bar item, sidebar.
-  - `src/hostClient.ts`: runs `dist/host.js`.
-  - `src/explorer/` and `webview/`: the Prompt Explorer, a custom editor with a Preact webview. `webview/model.ts` does all filtering and faceting client-side.
-  - `src/mcpProvider.ts`: registers the MCP server (`dist/mcp.js`).
+  - `engine.ts`: `PromptSearchEngine`, the facade every surface calls. `sync()` runs every registered source, then embeds.
+  - `registry.ts`: the generic `Registry` + `parseOptions` (zod). Every pluggable concept goes through one.
+  - `sources/`: `base.ts` is the plugin contract; `registry.ts` registers the built-ins (`copilot`, `vscode-chat`, `agent-host`, `claude-code`, `codex`); `sessionFiles.ts` is the shared loop for whole-file logs.
+  - `embed/`: provider registry (`local` ONNX, `openai-compatible`, `hashed`, `none`), pinned model specs + `model.json` manifests, the model store.
+  - `store.ts`: the SQLite index (`node:sqlite`, FTS5, chunks, embedding BLOBs, writer lease, migrations).
+  - `search/`: query language (`query.ts`), hybrid ranking (`rank.ts`), topics, fork lineage (`corpus.ts`). `searcher.ts` has two paths: `search` for the quick pick, `explore` for the Explorer.
+  - `host.ts` / `protocol.ts`: the child process the extension talks to. `mcp.ts`: the MCP server.
+- **`packages/cli`** (`promptback` on npm): `src/cli.ts`; `server.json` is the MCP registry manifest.
+- **`packages/vscode`** (`spencrr.promptback-vscode`): `src/extension.ts` (activation, commands, settings → engine options), `src/hostClient.ts`, `src/explorer/` + `webview/` (Preact custom editor; `webview/model.ts` filters and facets client-side), `src/mcpProvider.ts`.
 
 ## Invariants
 
-- **Inputs are read-only.** The code never writes to what it reads: `~/.copilot/session-state`, VS Code's `workspaceStorage` and `agentSessionData`. It writes only to the index folder.
-- **One shared index.** Every VS Code window (the Agents window too), the CLI and each MCP server process open `~/.promptback/index.db`. Override the location with `PROMPTBACK_HOME`, or `promptback.index.directory` in VS Code. Indexing (`engine.sync()`) runs only in the process holding the SQLite `lease` row. Schema changes must be additive migrations in `store.ts`, because older builds open the same file.
-- **The index owns its source settings** (`meta.sources`). Processes that pass no source options (the CLI, `promptback mcp`) use the saved ones, so no process deletes sessions another chose to keep.
-- **No model inference in the extension host.** The extension forks `dist/host.js` with VS Code's own runtime. Add host calls to `protocol.ts`, which types both ends.
-- **MCP stdout is the protocol.** Nothing reachable from `serveMcp` may print to stdout. Tools stay read-only (`readOnlyHint`). They return plain text written for a model, including the ids the next call needs.
-- **Privacy.** No telemetry. The product makes no network calls except the pinned model download and the opt-in OpenAI-compatible embedder. The webview has a strict CSP and renders prompt text as text, never as HTML or Markdown.
-- **Ranking is measured.** Change `DEFAULT_RANKING` (`search/rank.ts`) only with before/after benchmark numbers. The benchmark is `npm run bench -w packages/core` and needs the user's labelled queries in the gitignored `bench/data/*.local.json`.
-
-## Build and test
-
-```
-npm install                                                  # Node >= 22.13 (node:sqlite)
-npm run typecheck                                            # 4 tsconfigs: strict, noUnused*, noUncheckedIndexedAccess, verbatimModuleSyntax
-npm test                                                     # vitest on synthetic fixtures; one file: npx vitest run <path>
-npm run build -w packages/cli                                # packages/cli/dist/cli.js
-node packages/vscode/scripts/build.mjs                       # dist/{extension,host,mcp,webview}.js
-node packages/vscode/scripts/package.mjs --target win32-x64  # platform VSIX with the bundled model
-node packages/vscode/test/integration/runTest.mjs            # real VS Code against the user's real history (read-only), temp index
-```
-
-Run typecheck and the tests before finishing. Also run the integration test when you touch the extension, the host or `protocol.ts`.
+- **Inputs are read-only.** Never write to `~/.copilot`, `~/.claude`, `~/.codex` or VS Code's storage. Only the index folder is written.
+- **One shared index.** Every process opens `~/.promptback/index.db` (`PROMPTBACK_HOME`, or `promptback.index.directory`). Indexing runs only in the process holding the SQLite `lease` row. Schema changes are additive migrations in `store.ts`; older builds open the same file.
+- **The index owns its source settings** (`meta.sources`, version 2, per-source options; version 1 is still read). Processes that pass no `sources` (CLI, `promptback mcp`) use the saved ones.
+- **Registries, not name switches.** New sources, providers and models register a plugin with a zod `options` schema. Labels, icons, `src:`/`client:` aliases, open targets and settings all derive from the plugin. Plugin interfaces use method signatures on purpose (bivariance lets plugins with specific option types share one registry).
+- **No model inference in the extension host.** The extension forks `dist/host.js`; host calls are typed in `protocol.ts`.
+- **MCP stdout is the protocol.** Nothing reachable from `serveMcp` may print to stdout. Tools stay read-only (`readOnlyHint`) and return plain text for a model, including the ids the next call needs.
+- **Privacy.** No telemetry. Network only for the pinned model download and the opt-in OpenAI-compatible embedder, both through an injectable `fetch`. API keys are read from a user-named env var, never stored or logged (`OpenAICompatibleEmbeddingProvider.toJSON` redacts). The webview has a strict CSP (crypto nonce) and renders prompt text as text, never HTML/Markdown.
+- **Ranking is measured.** Change `DEFAULT_RANKING` only with before/after benchmark numbers.
 
 ## Conventions
 
-- Tabs, single quotes, LF. ESM with `.js` import suffixes; `import type` for type-only imports.
-- Comment only what needs explaining; give exported APIs JSDoc.
-- Tests never touch real data. Use temp dirs, explicit `copilotHome`/`vscodeRoots`, and `embedding: { kind: 'none' }` or a fake provider (see `packages/core/test/engine.test.ts`).
-- The webview is a browser bundle, so it imports only types from core (`@promptback/core/types`).
-- Keep the four `package.json` versions in lockstep; the MCP server reports the version.
-- User-visible changes update `README.md` and `packages/vscode/README.md` (the Marketplace page). Design decisions go in `docs/DESIGN.md`.
+- Tabs, single quotes, 120 columns, LF, UTF-8 (`.editorconfig`, Biome). ESM with `.js` import suffixes; `import type` for type-only imports. JSON files use two spaces because npm rewrites `package.json` that way.
+- Every stable Biome group is on. Disabled rules are listed in `biome.jsonc` with a reason each. Suppress inline only per file/range/line with a reason (`// biome-ignore <rule>: why`); never silence a rule globally to make a finding go away.
+- No shell-string execution: `execFile`/`fork` with argument arrays and `process.execPath`; scripts are resolved with `require.resolve`. Session ids go into terminal commands only when `isShellSafeId` says so.
+- Every stochastic step is seeded or cryptographic: k-means uses deterministic farthest-first seeding, the hashed embedder takes a seed, nonces come from `node:crypto`.
+- Cache keys cover what changes results: vectors are keyed by model fingerprint + chunk-text hash; chunking options are recorded in `meta.chunking` and a change re-chunks everything; source cursors carry a `version` to force re-reads when a projection changes.
+- Tests never touch real data or the network (`test/setup.ts` stubs `fetch` and points default homes at an empty folder). Use temp dirs, explicit `sources: { <id>: { home } }`, and `embedding: { kind: 'none' | 'hashed' }` or a fake provider. The e2e test (`packages/cli/test`) spawns the built CLI.
+- Comment only what needs explaining; exported APIs get JSDoc.
+- Keep the four `package.json` versions and `server.json` in lockstep (`versions.test.ts` enforces it). The MCP server reports the version.
+- User-visible changes update `README.md`, `packages/cli/README.md` (npm page) and `packages/vscode/README.md` (Marketplace page). Design decisions go in `docs/DESIGN.md`.
 - No `Co-authored-by` trailers in commits.
 
 ## Gotchas
 
-- `node file.ts` can't run core sources, because Node's type stripping rejects TypeScript parameter properties. Use vitest, or bundle with esbuild as the `bench` script does.
+- `node file.ts` can't run core sources (TypeScript parameter properties defeat type stripping). Use vitest, or bundle with esbuild as `bench` and `examples/run.mjs` do.
 - `~/.promptback` is the user's live index. Inspect it read-only (`new DatabaseSync(file, { readOnly: true })`); never delete or rewrite it.
 - If `promptback` is npm-linked, it runs this checkout's `packages/cli/dist/cli.js`, and so does any `promptback mcp` entry in `~/.copilot/mcp-config.json`. A broken CLI build then breaks the user's MCP tools in every agent session.
-- VSIXes are per platform because onnxruntime-node is native; only `win32-x64` is built today. `package.mjs` downloads the model into `packages/vscode/models/`, which is gitignored.
-- The Agents window runs only extensions listed in `extensions.supportAgentsWindow`. It uses its own profile and has no status bar or activity bar. That's why the Explorer is a custom editor, which gets the full editor area there, with its own keybinding.
+- npm ≥ 11.19 blocks dependency install scripts; `allowScripts` in the root `package.json` denies ours on purpose (onnxruntime ships CPU binaries; esbuild uses optional packages). Older npm runs onnxruntime's postinstall, which downloads CUDA binaries on linux-x64 unless `ONNXRUNTIME_NODE_INSTALL=skip` (CI sets it).
+- onnxruntime-node 1.30 ships win32-x64/arm64, linux-x64/arm64 and darwin-arm64 only; `package.mjs` refuses other targets. Intel Macs get the `hashed` provider or keyword search.
+- Biome's unsafe fixes change semantics (`Boolean(x)` drops narrowing, `noConsole` deletes calls, hook deps get rewritten). Review every `--unsafe` diff.
+- The Agents window runs only extensions listed in `extensions.supportAgentsWindow`, uses its own profile and has no status bar or activity bar; that's why the Explorer is a custom editor with its own keybinding.
