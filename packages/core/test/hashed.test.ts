@@ -19,7 +19,10 @@ function rng(seed: number): () => number {
 	};
 }
 
-const WORDS = 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega'.split(' ');
+const WORDS =
+	'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega'.split(
+		' ',
+	);
 
 describe('hashed embedding provider', () => {
 	const p = new HashedEmbeddingProvider();
@@ -37,7 +40,8 @@ describe('hashed embedding provider', () => {
 
 	it('ranks texts sharing words above unrelated texts, with margin, over seeded random documents', async () => {
 		const next = rng(42);
-		const pick = (n: number) => Array.from({ length: n }, () => WORDS[Math.floor(next() * WORDS.length)]!).join(' ');
+		const pick = (n: number) =>
+			Array.from({ length: n }, () => WORDS[Math.floor(next() * WORDS.length)]!).join(' ');
 		let related = 0;
 		let unrelated = 0;
 		const trials = 200;
@@ -62,9 +66,14 @@ describe('hashed embedding provider', () => {
 	});
 
 	it('is a registered provider with validated options', async () => {
-		const small = await createEmbeddingProvider({ kind: 'hashed', dims: 64 }, { cacheDir: 'unused', allowDownload: false });
+		const small = await createEmbeddingProvider(
+			{ kind: 'hashed', dims: 64 },
+			{ cacheDir: 'unused', allowDownload: false },
+		);
 		expect(small?.info.dims).toBe(64);
-		await expect(createEmbeddingProvider({ kind: 'hashed', dims: 7 }, { cacheDir: 'unused', allowDownload: false })).rejects.toThrow(/dims/);
+		await expect(
+			createEmbeddingProvider({ kind: 'hashed', dims: 7 }, { cacheDir: 'unused', allowDownload: false }),
+		).rejects.toThrow(/dims/);
 		const empty = await p.embedQuery('');
 		expect(Array.from(empty).every(x => x === 0)).toBe(true);
 	});

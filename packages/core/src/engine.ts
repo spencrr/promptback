@@ -233,15 +233,16 @@ export class PromptSearchEngine {
 		try {
 			opts.onProgress?.({ phase: 'scan', message: 'Scanning prompt history…' });
 			const settings = this.sourceSettings();
+			const chunker = (text: string) => chunkText(text, this.chunkOpts);
+			let sessionsChanged = this.rechunkIfOptionsChanged(chunker);
 			const ctx: SourceContext = {
 				store: this.store,
-				chunker: (text: string) => chunkText(text, this.chunkOpts),
+				chunker,
 				retainDeleted: settings.retainDeleted,
 				signal: this.closing.signal,
 				log: m => this.log(m),
 				yieldToLoop,
 			};
-			let sessionsChanged = false;
 			for (const source of this.sources.list()) {
 				if (this.closing.signal.aborted) {
 					break;
@@ -305,6 +306,25 @@ export class PromptSearchEngine {
 		}
 	}
 
+	/**
+	 * Chunk boundaries are part of every cached result (embeddings, match ranges), so the chunking options are recorded
+	 * in the index and a change re-chunks every stored prompt. Call under the lease; returns whether anything changed.
+	 */
+	private rechunkIfOptionsChanged(chunker: (text: string) => ReturnType<typeof chunkText>): boolean {
+		const key = JSON.stringify(this.chunkOpts);
+		const saved = this.store.getMeta('chunking');
+		if (saved === key) {
+			return false;
+		}
+		if (saved !== undefined) {
+			const t = Date.now();
+			const n = this.store.transaction(() => this.store.rechunkAll(chunker));
+			this.log(`Chunking options changed; re-chunked ${n} prompts in ${Date.now() - t} ms`);
+		}
+		this.store.setMeta('chunking', key);
+		return saved !== undefined;
+	}
+
 	private get embedOrigins(): readonly PromptOrigin[] {
 		return this.opts.embedOrigins ?? ['human'];
 	}
@@ -356,7 +376,7 @@ export class PromptSearchEngine {
 		});
 	}
 	private bumpRevision(): void {
-		this.store.setMeta('revision', `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+		this.store.setMeta('revision', `${Date.now()}-${randomUUID().slice(0, 8)}`);
 	}
 
 	private async embedPending(opts: SyncOptions, errors: string[]): Promise<number> {

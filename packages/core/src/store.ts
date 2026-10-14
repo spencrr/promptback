@@ -282,6 +282,24 @@ export class Store {
 		return count;
 	}
 
+	/**
+	 * Recomputes every prompt's chunks with `chunker` (after the chunking options changed). Vectors are keyed by chunk
+	 * text, so chunks whose text is unchanged keep their embeddings; the rest are embedded on the next sync.
+	 */
+	rechunkAll(chunker: (text: string) => Chunk[]): number {
+		const insChunk = this.stmt('INSERT INTO chunks(prompt_rowid, ord, start, "end", hash) VALUES (?, ?, ?, ?, ?)');
+		let count = 0;
+		this.stmt('DELETE FROM chunks').run();
+		for (const r of this.db.prepare('SELECT rowid, text FROM prompts').iterate() as Iterable<Row>) {
+			const rowid = Number(r.rowid);
+			for (const [ord, c] of chunker(String(r.text)).entries()) {
+				insChunk.run(rowid, ord, c.start, c.end, hashText(c.text));
+			}
+			count++;
+		}
+		return count;
+	}
+
 	/** Replaces all prompts of a session (used for full re-reads). Returns [added, removed]. */
 	replaceSessionPrompts(
 		sessionKey: string,

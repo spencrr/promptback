@@ -5,7 +5,7 @@ import { copilotHome } from '../paths.js';
 import type { SessionInfo, SessionOpenTarget } from '../types.js';
 import { errorMessage, mtime } from '../util/fs.js';
 import { agentsWindowLink } from './agentHost.js';
-import { baseSourceOptions, type PromptSourcePlugin, type SourceSyncResult } from './base.js';
+import { baseSourceOptions, isShellSafeId, type PromptSourcePlugin, type SourceSyncResult } from './base.js';
 import {
 	type CopilotFileState,
 	copilotSessionKey,
@@ -134,12 +134,14 @@ export const copilotSource: PromptSourcePlugin<CopilotSourceOptions> = {
 				bestEffort: true,
 			});
 		}
-		out.push({
-			kind: 'terminal-resume',
-			label: 'Resume with Copilot CLI',
-			command: `copilot --resume ${s.sessionId}`,
-			cwd: s.cwd,
-		});
+		if (isShellSafeId(s.sessionId)) {
+			out.push({
+				kind: 'terminal-resume',
+				label: 'Resume with Copilot CLI',
+				command: `copilot --resume ${s.sessionId}`,
+				cwd: s.cwd,
+			});
+		}
 		return out;
 	},
 };

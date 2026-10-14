@@ -343,6 +343,36 @@ describe('PromptSearchEngine', () => {
 		}
 	});
 
+	it('re-chunks every stored prompt when the chunking options change, keeping vectors of unchanged chunks', async () => {
+		const long = Array.from({ length: 40 }, (_, i) => `Paragraph ${i} about the parser and its tokens.`).join('\n');
+		writeSession('sess-long', 'id: sess-long\n', [{ type: 'user.message', data: { content: long }, id: 'l1' }]);
+		const first = new FakeEmbedder();
+		const a = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), sources: fixtureSources(), embeddingProvider: first });
+		engines.push(a);
+		await a.sync();
+		const before = a.status();
+		expect(before.pendingChunks).toBe(0);
+		await a.close();
+
+		// Smaller chunks: more of them, and the ones whose text changed need new vectors; the short prompts keep theirs.
+		const second = new FakeEmbedder();
+		const b = PromptSearchEngine.open({
+			indexDir: path.join(tmp, 'index'),
+			sources: fixtureSources(),
+			embeddingProvider: second,
+			chunking: { targetChars: 300, overlapChars: 40 },
+		});
+		engines.push(b);
+		const r = await b.sync();
+		const after = b.status();
+		expect(after.chunks).toBeGreaterThan(before.chunks);
+		expect(after.pendingChunks).toBe(0);
+		expect(r.embeddedChunks).toBeGreaterThan(0);
+		expect(second.calls).toBeLessThan(after.chunks);
+		// Same options again: nothing to redo.
+		expect((await b.sync()).embeddedChunks).toBe(0);
+	});
+
 	it('derives fork lineage from shared event ids', async () => {
 		const engine = open();
 		await engine.sync();

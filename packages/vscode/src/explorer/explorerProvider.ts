@@ -1,5 +1,6 @@
 import { embeddingProviders, localModels, sourceCatalog } from '@promptback/core';
 import { sessionOpenTargets } from '@promptback/core/links';
+import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { copyPrompt, insertIntoChat, openSession, previewPrompt } from '../actions.js';
 import type { HostClient } from '../hostClient.js';
@@ -248,7 +249,7 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 	}
 
 	private html(webview: vscode.Webview, dist: vscode.Uri): string {
-		const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+		const nonce = randomBytes(16).toString('base64url');
 		const asset = (f: string) => webview.asWebviewUri(vscode.Uri.joinPath(dist, f));
 		// No remote content of any kind: prompts are private and images/links could exfiltrate them.
 		const csp = [

@@ -11,6 +11,8 @@ let home: string;
 
 const SID = '4381a2ec-673e-4e7d-b24b-2a42833e0059';
 
+let uuidCounter = 0;
+
 function line(obj: Record<string, unknown>): string {
 	return JSON.stringify(obj);
 }
@@ -26,7 +28,7 @@ function user(content: unknown, extra: Record<string, unknown> = {}): string {
 		gitBranch: 'main',
 		type: 'user',
 		message: { role: 'user', content },
-		uuid: extra.uuid ?? `u-${Math.random().toString(36).slice(2, 8)}`,
+		uuid: extra.uuid ?? `u-${++uuidCounter}`,
 		timestamp: '2026-10-10T07:50:37.000Z',
 		entrypoint: 'cli',
 		...extra,

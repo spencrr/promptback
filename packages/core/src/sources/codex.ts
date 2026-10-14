@@ -5,7 +5,7 @@ import * as z from 'zod/v4';
 import type { PromptOrigin, PromptRecord, SessionInfo, SessionOpenTarget } from '../types.js';
 import { safeReaddir } from '../util/fs.js';
 import { findGitRoot, parseRemote, repoName } from '../util/git.js';
-import { baseSourceOptions, type PromptSourcePlugin } from './base.js';
+import { baseSourceOptions, isShellSafeId, type PromptSourcePlugin } from './base.js';
 import {
 	firstLine,
 	forEachJsonLine,
@@ -237,6 +237,9 @@ export const codexSource: PromptSourcePlugin<CodexSourceOptions> = {
 	},
 
 	openTargets(s: SessionInfo): SessionOpenTarget[] {
+		if (!isShellSafeId(s.sessionId)) {
+			return [];
+		}
 		return [
 			{ kind: 'terminal-resume', label: 'Resume with Codex', command: `codex resume ${s.sessionId}`, cwd: s.cwd },
 		];

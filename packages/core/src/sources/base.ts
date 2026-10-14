@@ -74,6 +74,14 @@ export interface PromptSourcePlugin<O = unknown> extends ConfigurablePlugin<O> {
 	openTargets?: (session: SessionInfo) => SessionOpenTarget[];
 }
 
+/**
+ * Session ids safe to place in a shell command (`copilot --resume <id>`): letters, digits, `.`, `_`, `-`. Ids are read
+ * from folder and file names on disk, so anything else is left out of terminal targets rather than quoted.
+ */
+export function isShellSafeId(id: string): boolean {
+	return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id);
+}
+
 /** Options every source has; plugins extend this schema. */
 export const baseSourceOptions = z.object({
 	enabled: z.boolean().default(true),

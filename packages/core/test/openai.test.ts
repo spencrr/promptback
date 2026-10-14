@@ -16,11 +16,16 @@ function fakeEndpoint(opts: { dims?: number; status?: number } = {}) {
 		const body = JSON.parse(String(init?.body)) as Captured['body'];
 		calls.push({ url: String(input), headers: { ...(init?.headers as Record<string, string>) }, body });
 		if (opts.status) {
-			return Promise.resolve(new Response('{"error":"quota"}', { status: opts.status, statusText: 'Too Many Requests' }));
+			return Promise.resolve(
+				new Response('{"error":"quota"}', { status: opts.status, statusText: 'Too Many Requests' }),
+			);
 		}
 		// Returned out of order on purpose: clients must sort by index.
 		const data = body.input
-			.map((text, index) => ({ index, embedding: Array.from({ length: dims }, (_, d) => (d === 0 ? text.length : d)) }))
+			.map((text, index) => ({
+				index,
+				embedding: Array.from({ length: dims }, (_, d) => (d === 0 ? text.length : d)),
+			}))
 			.reverse();
 		return Promise.resolve(new Response(JSON.stringify({ data }), { status: 200 }));
 	};
@@ -41,19 +46,33 @@ describe('OpenAI-compatible embedding provider', () => {
 		const vecs = await p.embedDocuments(['a', 'abcd']);
 		expect(ep.calls).toHaveLength(1);
 		expect(ep.calls[0]!.url).toBe('https://example.openai.azure.com/openai/v1/embeddings');
-		expect(ep.calls[0]!.headers).toMatchObject({ authorization: 'Bearer sk-secret', 'api-key': 'sk-secret', 'x-tenant': 't1' });
+		expect(ep.calls[0]!.headers).toMatchObject({
+			authorization: 'Bearer sk-secret',
+			'api-key': 'sk-secret',
+			'x-tenant': 't1',
+		});
 		expect(ep.calls[0]!.body).toEqual({ model: 'text-embedding-3-small', input: ['a', 'abcd'], dimensions: 3 });
 		// Order restored and L2-normalised.
 		expect(vecs[0]![0]).toBeLessThan(vecs[1]![0]!);
 		for (const v of vecs) {
 			expect(Math.hypot(...v)).toBeCloseTo(1, 6);
 		}
-		expect(p.info).toMatchObject({ dims: 3, local: false, displayName: 'text-embedding-3-small @ example.openai.azure.com' });
+		expect(p.info).toMatchObject({
+			dims: 3,
+			local: false,
+			displayName: 'text-embedding-3-small @ example.openai.azure.com',
+		});
 	});
 
 	it('treats loopback endpoints as local, batches long inputs and probes dimensions when unknown', async () => {
 		const ep = fakeEndpoint({ dims: 5 });
-		const p = new OpenAICompatibleEmbeddingProvider({ baseUrl: 'http://localhost:11434/v1', model: 'nomic', batchSize: 2, maxChars: 4, fetch: ep.fetch });
+		const p = new OpenAICompatibleEmbeddingProvider({
+			baseUrl: 'http://localhost:11434/v1',
+			model: 'nomic',
+			batchSize: 2,
+			maxChars: 4,
+			fetch: ep.fetch,
+		});
 		expect(p.info.local).toBe(true);
 		expect(p.info.dims).toBe(0);
 		await p.embedDocuments(['one', 'two', 'three-is-long']);
@@ -64,7 +83,12 @@ describe('OpenAI-compatible embedding provider', () => {
 
 	it('surfaces HTTP errors with the response body but never the key', async () => {
 		const ep = fakeEndpoint({ status: 429 });
-		const p = new OpenAICompatibleEmbeddingProvider({ baseUrl: 'https://api.example.com/v1', model: 'm', apiKey: 'sk-secret', fetch: ep.fetch });
+		const p = new OpenAICompatibleEmbeddingProvider({
+			baseUrl: 'https://api.example.com/v1',
+			model: 'm',
+			apiKey: 'sk-secret',
+			fetch: ep.fetch,
+		});
 		let message = '';
 		try {
 			await p.embedQuery('x');
@@ -79,18 +103,23 @@ describe('OpenAI-compatible embedding provider', () => {
 
 	it('is created through the registry from the environment variable the user names', async () => {
 		const ep = fakeEndpoint({ dims: 2 });
-		process.env['PROMPTBACK_TEST_KEY'] = 'sk-from-env';
+		process.env.PROMPTBACK_TEST_KEY = 'sk-from-env';
 		try {
 			const p = await createEmbeddingProvider(
-				{ kind: 'openai-compatible', baseUrl: 'https://api.example.com/v1', model: 'm', apiKeyEnv: 'PROMPTBACK_TEST_KEY' },
+				{
+					kind: 'openai-compatible',
+					baseUrl: 'https://api.example.com/v1',
+					model: 'm',
+					apiKeyEnv: 'PROMPTBACK_TEST_KEY',
+				},
 				{ cacheDir: 'unused', allowDownload: false, fetch: ep.fetch },
 			);
 			// The dimension probe ran once at creation.
 			expect(ep.calls).toHaveLength(1);
-			expect(ep.calls[0]!.headers['authorization']).toBe('Bearer sk-from-env');
+			expect(ep.calls[0]!.headers.authorization).toBe('Bearer sk-from-env');
 			expect(p?.info.dims).toBe(2);
 		} finally {
-			delete process.env['PROMPTBACK_TEST_KEY'];
+			delete process.env.PROMPTBACK_TEST_KEY;
 		}
 	});
 });

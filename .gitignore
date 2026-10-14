@@ -1,9 +1,32 @@
+# Dependencies and build output
 node_modules/
 dist/
-*.vsix
 *.tsbuildinfo
+*.vsix
+*.tgz
+
+# Test and tool caches
 .vitest-cache/
 coverage/
+.vscode-test/
+
+# Downloaded models (fetched on first use, or bundled by package.mjs --bundle-model)
 .models/
 packages/vscode/models/
+
+# Private benchmark data (references the author's own prompts)
 *.local.json
+
+# Secrets and local configuration: never committed
+.env
+.env.*
+.npmrc
+
+# Editor and OS noise (shared editor recommendations are kept)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.log
+.DS_Store
+Thumbs.db
