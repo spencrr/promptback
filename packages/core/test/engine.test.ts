@@ -347,7 +347,11 @@ describe('PromptSearchEngine', () => {
 		const long = Array.from({ length: 40 }, (_, i) => `Paragraph ${i} about the parser and its tokens.`).join('\n');
 		writeSession('sess-long', 'id: sess-long\n', [{ type: 'user.message', data: { content: long }, id: 'l1' }]);
 		const first = new FakeEmbedder();
-		const a = PromptSearchEngine.open({ indexDir: path.join(tmp, 'index'), sources: fixtureSources(), embeddingProvider: first });
+		const a = PromptSearchEngine.open({
+			indexDir: path.join(tmp, 'index'),
+			sources: fixtureSources(),
+			embeddingProvider: first,
+		});
 		engines.push(a);
 		await a.sync();
 		const before = a.status();

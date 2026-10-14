@@ -19,12 +19,22 @@ const cliJs = path.join(pkgDir, 'dist', 'cli.js');
 let tmp: string;
 let env: NodeJS.ProcessEnv;
 
-function writeCopilotSession(home: string, id: string, yaml: string, prompts: { id: string; text: string; ts: string; source?: string }[]) {
+function writeCopilotSession(
+	home: string,
+	id: string,
+	yaml: string,
+	prompts: { id: string; text: string; ts: string; source?: string }[],
+) {
 	const dir = path.join(home, 'session-state', id);
 	fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(path.join(dir, 'workspace.yaml'), yaml);
 	const lines = prompts.map(p =>
-		JSON.stringify({ type: 'user.message', id: p.id, timestamp: p.ts, data: { content: p.text, ...(p.source ? { source: p.source } : {}) } }),
+		JSON.stringify({
+			type: 'user.message',
+			id: p.id,
+			timestamp: p.ts,
+			data: { content: p.text, ...(p.source ? { source: p.source } : {}) },
+		}),
 	);
 	fs.writeFileSync(path.join(dir, 'events.jsonl'), `${lines.join('\n')}\n`);
 }
@@ -46,7 +56,7 @@ function writeClaudeSession(home: string, sessionId: string, prompts: { uuid: st
 	fs.writeFileSync(path.join(dir, `${sessionId}.jsonl`), `${lines.join('\n')}\n`);
 }
 
-async function cli(...args: string[]): Promise<{ stdout: string; stderr: string }> {
+function cli(...args: string[]): Promise<{ stdout: string; stderr: string }> {
 	return run(process.execPath, [cliJs, ...args], { env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 }
 
@@ -55,10 +65,15 @@ beforeAll(async () => {
 	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'promptback-e2e-'));
 	const copilotHome = path.join(tmp, 'copilot');
 	const claudeHome = path.join(tmp, 'claude');
-	writeCopilotSession(copilotHome, 'sess-1', 'id: sess-1\nrepository: owner/webapp\nclient_name: github/cli\nname: Flaky tests\n', [
-		{ id: 'a1', text: 'Fix the flaky retry_policy test in the HTTP client', ts: '2026-09-01T10:00:00.000Z' },
-		{ id: 'a2', text: 'Summarize the incident', ts: '2026-09-01T10:05:00.000Z', source: 'agent-x' },
-	]);
+	writeCopilotSession(
+		copilotHome,
+		'sess-1',
+		'id: sess-1\nrepository: owner/webapp\nclient_name: github/cli\nname: Flaky tests\n',
+		[
+			{ id: 'a1', text: 'Fix the flaky retry_policy test in the HTTP client', ts: '2026-09-01T10:00:00.000Z' },
+			{ id: 'a2', text: 'Summarize the incident', ts: '2026-09-01T10:05:00.000Z', source: 'agent-x' },
+		],
+	);
 	writeClaudeSession(claudeHome, '11111111-2222-4333-8444-555555555555', [
 		{ uuid: 'u1', text: 'Write a design doc for the tree view', ts: '2026-09-02T10:00:00.000Z' },
 	]);
@@ -108,7 +123,10 @@ describe('promptback CLI (built binary)', () => {
 		const got = await cli('get', search.hits[0]!.prompt.id, '--no-model');
 		expect(got.stdout.trim()).toBe('Fix the flaky retry_policy test in the HTTP client');
 
-		const status = JSON.parse((await cli('status', '--json', '--no-model')).stdout) as { prompts: number; promptsBySource: Record<string, number> };
+		const status = JSON.parse((await cli('status', '--json', '--no-model')).stdout) as {
+			prompts: number;
+			promptsBySource: Record<string, number>;
+		};
 		expect(status.prompts).toBe(3);
 		expect(status.promptsBySource).toEqual({ copilot: 2, 'claude-code': 1 });
 
@@ -123,7 +141,10 @@ describe('promptback CLI (built binary)', () => {
 
 	it('fails clearly on an unknown command and a missing prompt', async () => {
 		await expect(cli('frobnicate')).rejects.toMatchObject({ code: 2 });
-		await expect(cli('get', 'nope', '--no-model')).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('Not found') });
+		await expect(cli('get', 'nope', '--no-model')).rejects.toMatchObject({
+			code: 1,
+			stderr: expect.stringContaining('Not found'),
+		});
 	});
 
 	it('serves the MCP tools over stdio, keeping stdout clean for the protocol', async () => {
@@ -137,7 +158,13 @@ describe('promptback CLI (built binary)', () => {
 		await client.connect(transport);
 		try {
 			const tools = (await client.listTools()).tools.map(t => t.name).sort((a, b) => a.localeCompare(b));
-			expect(tools).toEqual(['get_prompt', 'get_session', 'index_status', 'list_recent_sessions', 'search_prompts']);
+			expect(tools).toEqual([
+				'get_prompt',
+				'get_session',
+				'index_status',
+				'list_recent_sessions',
+				'search_prompts',
+			]);
 			const result = await client.callTool({ name: 'search_prompts', arguments: { query: 'retry_policy' } });
 			const text = (result.content as { type: string; text: string }[])[0]!.text;
 			expect(text).toMatch(/1 prompt for "retry_policy"/);

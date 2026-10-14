@@ -1,6 +1,6 @@
+import { randomBytes } from 'node:crypto';
 import { embeddingProviders, localModels, sourceCatalog } from '@promptback/core';
 import { sessionOpenTargets } from '@promptback/core/links';
-import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { copyPrompt, insertIntoChat, openSession, previewPrompt } from '../actions.js';
 import type { HostClient } from '../hostClient.js';
