@@ -1,8 +1,14 @@
 {
   "name": "@promptback/core",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
-  "description": "Ingestion, indexing, embeddings and hybrid search over local Copilot / VS Code prompt history.",
+  "description": "Ingestion, SQLite index, pluggable embeddings and sources, hybrid ranking and the MCP server behind Promptback. Shipped as TypeScript source and bundled into the CLI and the VS Code extension.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spencrr/promptback.git",
+    "directory": "packages/core"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -12,7 +18,7 @@
     "./mcp": "./src/mcp.ts"
   },
   "scripts": {
-    "build": "tsc -p .",
+    "typecheck": "tsc -p .",
     "bench": "esbuild bench/eval.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/bench.mjs --external:onnxruntime-node --log-level=warning --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\" && node dist/bench.mjs"
   },
   "dependencies": {

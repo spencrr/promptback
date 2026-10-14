@@ -1,8 +1,11 @@
 src/**
+webview/**
 scripts/**
 test/**
 node_modules/**
 tsconfig.json
 **/*.map
 **/*.ts
+**/*.tsx
 *.vsix
+media/*.svg

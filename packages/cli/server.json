@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.spencrr/promptback",
+  "title": "Promptback",
+  "description": "Read-only search over the prompts this user sent to AI coding agents (Copilot, Claude Code, Codex, VS Code Chat). Local index; nothing leaves the machine.",
+  "repository": {
+    "url": "https://github.com/spencrr/promptback",
+    "source": "github"
+  },
+  "version": "0.6.0",
+  "websiteUrl": "https://github.com/spencrr/promptback#mcp-server",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "promptback",
+      "version": "0.6.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "Run the MCP server on stdio."
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "PROMPTBACK_HOME",
+          "description": "Index folder (default ~/.promptback), shared with the VS Code extension and the CLI.",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

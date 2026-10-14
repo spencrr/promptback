@@ -1,17 +1,60 @@
 {
   "name": "promptback",
-  "version": "0.5.1",
-  "private": true,
-  "description": "Promptback from the terminal: index, search and inspect your prompt history.",
+  "version": "0.6.0",
+  "description": "Search every prompt you've sent to your AI coding agents (Copilot, Claude Code, Codex, VS Code Chat) from the terminal, and serve them to agents over MCP. Local-first.",
+  "keywords": [
+    "prompts",
+    "prompt history",
+    "semantic search",
+    "copilot",
+    "claude code",
+    "codex",
+    "mcp",
+    "ai coding agents"
+  ],
+  "homepage": "https://github.com/spencrr/promptback#readme",
+  "bugs": {
+    "url": "https://github.com/spencrr/promptback/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spencrr/promptback.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT",
+  "author": "Spencer Schoenberg",
   "type": "module",
+  "mcpName": "dev.spencrr/promptback",
   "bin": {
-    "promptback": "dist/cli.js",
     "promptback": "dist/cli.js"
   },
+  "files": [
+    "dist/cli.js",
+    "server.json"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "os": [
+    "win32",
+    "linux",
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/cli.js --external:onnxruntime-node --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\""
+    "build": "node ./scripts/build.mjs",
+    "prepack": "npm run build"
   },
   "dependencies": {
+    "onnxruntime-node": "1.30.0"
+  },
+  "devDependencies": {
     "@promptback/core": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

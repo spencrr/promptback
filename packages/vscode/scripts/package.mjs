@@ -1,13 +1,16 @@
 // Produces a platform-specific VSIX:
-//   1. production bundles (dist/extension.js, dist/host.js)
+//   1. production bundles (dist/extension.js, dist/host.js, dist/mcp.js, dist/webview.js)
 //   2. onnxruntime-node (+ onnxruntime-common) copied next to the bundle, pruned to one platform
-//   3. the default embedding model (pinned revision, sha256-verified) bundled for offline use
+//   3. optionally the default embedding model (pinned revision, sha256-verified) for offline installs
 //   4. vsce package --target <platform>
-// Usage: node scripts/package.mjs [--target win32-x64] [--no-model]
+// Usage: node scripts/package.mjs [--target <platform>-<arch>] [--bundle-model]
+// Targets are the platforms onnxruntime-node ships binaries for: win32-x64, win32-arm64, linux-x64, linux-arm64,
+// darwin-arm64. By default the model is downloaded on first use (33 MB, hash-verified) instead of shipping in
+// every update; pass --bundle-model for an offline-capable VSIX.
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { createRequire } from 'node:module';
+import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as esbuild from 'esbuild';
 
@@ -18,15 +21,19 @@ const argValue = name => {
 	const i = args.indexOf(name);
 	return i >= 0 ? args[i + 1] : undefined;
 };
+export const TARGETS = ['win32-x64', 'win32-arm64', 'linux-x64', 'linux-arm64', 'darwin-arm64'];
 const target = argValue('--target') ?? `${process.platform}-${process.arch}`;
+if (!TARGETS.includes(target)) {
+	throw new Error(`Unsupported target '${target}'. onnxruntime-node ships binaries for: ${TARGETS.join(', ')}`);
+}
 const [platform, arch] = target.split('-');
-const bundleModel = !args.includes('--no-model');
+const bundleModel = args.includes('--bundle-model');
 
-const run = (cmd, cmdArgs) => execFileSync(cmd, cmdArgs, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
-
+// Scripts run with this Node binary and resolved entry points: no shell, no PATH lookup.
+const run = (script, scriptArgs) => execFileSync(process.execPath, [script, ...scriptArgs], { cwd: root, stdio: 'inherit' });
 console.log(`\n== Building (${target})`);
 fs.rmSync(path.join(root, 'dist'), { recursive: true, force: true });
-run('node', ['scripts/build.mjs', '--production']);
+run(path.join(root, 'scripts', 'build.mjs'), ['--production']);
 
 console.log('\n== Staging onnxruntime-node');
 const nm = path.join(root, 'dist', 'node_modules');
@@ -90,5 +97,5 @@ if (bundleModel) {
 console.log('\n== Packaging VSIX');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const out = path.join(root, `${pkg.name}-${pkg.version}-${target}.vsix`);
-run('npx', ['vsce', 'package', '--no-dependencies', '--skip-license', '--allow-missing-repository', '--target', target, '--out', out]);
+run(require.resolve('@vscode/vsce/vsce'), ['package', '--no-dependencies', '--target', target, '--out', out]);
 console.log(`\nCreated ${out} (${(fs.statSync(out).size / 1048576).toFixed(1)} MB)`);

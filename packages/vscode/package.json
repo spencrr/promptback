@@ -1,13 +1,27 @@
 {
   "name": "promptback-vscode",
   "displayName": "Promptback",
-  "description": "Semantic search over every prompt you've sent to your AI coding agents: Copilot CLI, the VS Code Agents window, autopilot and Chat. Local-first.",
-  "version": "0.5.1",
+  "description": "Semantic search over every prompt you've sent to your AI coding agents: Copilot (Agents window, CLI, autopilot), Claude Code, Codex and VS Code Chat. Local-first.",
+  "version": "0.6.0",
   "private": true,
   "publisher": "spencrr",
+  "author": "Spencer Schoenberg",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1f2430",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "homepage": "https://github.com/spencrr/promptback#readme",
+  "bugs": {
+    "url": "https://github.com/spencrr/promptback/issues"
+  },
+  "qna": "https://github.com/spencrr/promptback/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/spencrr/promptback"
+    "url": "https://github.com/spencrr/promptback.git",
+    "directory": "packages/vscode"
   },
   "engines": {
     "vscode": "^1.101.0"
@@ -19,10 +33,12 @@
   ],
   "keywords": [
     "copilot",
+    "claude code",
+    "codex",
     "prompts",
-    "history",
+    "prompt history",
     "semantic search",
-    "agents"
+    "mcp"
   ],
   "extensionKind": [
     "ui"
