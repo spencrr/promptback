@@ -2,7 +2,7 @@ import * as z from 'zod/v4';
 import { vscodeUserDataRoots } from '../paths.js';
 import { errorMessage, mtime } from '../util/fs.js';
 import { type AgentHostDbState, listAgentHostDbs, readAgentHostDb } from './agentHost.js';
-import { type PromptSourcePlugin, type SourceSyncResult, baseSourceOptions } from './base.js';
+import { baseSourceOptions, type PromptSourcePlugin, type SourceSyncResult } from './base.js';
 import { vscodeRootSchema } from './vscodeChatSource.js';
 
 export const agentHostSourceOptions = baseSourceOptions.extend({
@@ -28,7 +28,13 @@ export const agentHostSource: PromptSourcePlugin<AgentHostSourceOptions> = {
 	async sync(o, ctx): Promise<SourceSyncResult> {
 		const { store } = ctx;
 		const errors: string[] = [];
-		const links: { sdkSessionId: string; agentHostSessionId: string; product: string; chatId?: string; title?: string }[] = [];
+		const links: {
+			sdkSessionId: string;
+			agentHostSessionId: string;
+			product: string;
+			chatId?: string;
+			title?: string;
+		}[] = [];
 		let changed = false;
 		const seen = new Set<string>();
 		const states = store.loadFileStates<AgentHostDbState>('agent-host');
@@ -53,7 +59,13 @@ export const agentHostSource: PromptSourcePlugin<AgentHostSourceOptions> = {
 					changed = true;
 				}
 				for (const l of st.links) {
-					links.push({ sdkSessionId: l.sdkSessionId, agentHostSessionId, product, chatId: l.chatId, title: st.title });
+					links.push({
+						sdkSessionId: l.sdkSessionId,
+						agentHostSessionId,
+						product,
+						chatId: l.chatId,
+						title: st.title,
+					});
 				}
 				if (i % 50 === 0) {
 					await ctx.yieldToLoop();

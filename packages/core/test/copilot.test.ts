@@ -2,13 +2,18 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { classifyCopilotOrigin, listCopilotSessions, readCopilotEvents, readCopilotSessionInfo } from '../src/sources/copilot.js';
+import {
+	classifyCopilotOrigin,
+	listCopilotSessions,
+	readCopilotEvents,
+	readCopilotSessionInfo,
+} from '../src/sources/copilot.js';
 
 let home: string;
 const SID = '11111111-2222-3333-4444-555555555555';
 
 function ev(type: string, data: Record<string, unknown>, id: string, ts = '2026-09-01T10:00:00.000Z') {
-	return JSON.stringify({ type, data, id, timestamp: ts, parentId: null }) + '\n';
+	return `${JSON.stringify({ type, data, id, timestamp: ts, parentId: null })}\n`;
 }
 
 beforeEach(() => {
@@ -28,13 +33,19 @@ describe('copilot events source', () => {
 
 	it('reads user messages incrementally, skipping huge unrelated lines and blanks', () => {
 		const big = 'x'.repeat(3 * 1024 * 1024);
-		fs.writeFileSync(eventsPath(),
-			ev('session.start', { selectedModel: 'model-a', startTime: '2026-09-01T09:00:00.000Z', context: { cwd: 'C:\\src\\repo' } }, 'e0')
-			+ ev('user.message', { content: 'hello world' }, 'e1')
-			+ ev('tool.execution_complete', { output: big }, 'e2')
-			+ ev('user.message', { content: '   ' }, 'e3')
-			+ ev('session.model_change', { newModel: 'model-b' }, 'e4')
-			+ ev('user.message', { content: 'from agent', source: 'agent-abc' }, 'e5'));
+		fs.writeFileSync(
+			eventsPath(),
+			ev(
+				'session.start',
+				{ selectedModel: 'model-a', startTime: '2026-09-01T09:00:00.000Z', context: { cwd: 'C:\\src\\repo' } },
+				'e0',
+			) +
+				ev('user.message', { content: 'hello world' }, 'e1') +
+				ev('tool.execution_complete', { output: big }, 'e2') +
+				ev('user.message', { content: '   ' }, 'e3') +
+				ev('session.model_change', { newModel: 'model-b' }, 'e4') +
+				ev('user.message', { content: 'from agent', source: 'agent-abc' }, 'e5'),
+		);
 		const [s] = listCopilotSessions(home);
 		const r1 = readCopilotEvents(s!, undefined)!;
 		expect(r1.reset).toBe(true);
@@ -75,11 +86,20 @@ describe('copilot events source', () => {
 	});
 
 	it('parses workspace.yaml metadata', () => {
-		fs.writeFileSync(path.join(home, 'session-state', SID, 'workspace.yaml'),
-			`id: ${SID}\ncwd: c:\\src\\x\nrepository: owner/x\nbranch: main\nclient_name: github/cli\nname: "Fix: the thing"\ncreated_at: 2026-09-01T09:00:00.000Z\n`);
+		fs.writeFileSync(
+			path.join(home, 'session-state', SID, 'workspace.yaml'),
+			`id: ${SID}\ncwd: c:\\src\\x\nrepository: owner/x\nbranch: main\nclient_name: github/cli\nname: "Fix: the thing"\ncreated_at: 2026-09-01T09:00:00.000Z\n`,
+		);
 		const [s] = listCopilotSessions(home);
 		const info = readCopilotSessionInfo(s!);
-		expect(info).toMatchObject({ key: `copilot:${SID}`, repository: 'owner/x', branch: 'main', client: 'github/cli', title: 'Fix: the thing', cwd: 'c:\\src\\x' });
+		expect(info).toMatchObject({
+			key: `copilot:${SID}`,
+			repository: 'owner/x',
+			branch: 'main',
+			client: 'github/cli',
+			title: 'Fix: the thing',
+			cwd: 'c:\\src\\x',
+		});
 	});
 
 	it('classifies message origins', () => {

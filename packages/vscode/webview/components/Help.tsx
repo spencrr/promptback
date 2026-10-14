@@ -12,14 +12,38 @@ const QUERIES: [string, string][] = [
 	['mode:lex  mode:sem', 'Keyword-only or meaning-only'],
 	['sort:recent', 'Newest first'],
 ];
-const KEYS: [string, string][] = [['/', 'Focus search'], ['↑ ↓', 'Move'], ['Enter', 'Copy prompt'], ['Ctrl+Enter', 'Insert into chat'], ['O', 'Open session'], ['G', 'Toggle graph']];
+const KEYS: [string, string][] = [
+	['/', 'Focus search'],
+	['↑ ↓', 'Move'],
+	['Enter', 'Copy prompt'],
+	['Ctrl+Enter', 'Insert into chat'],
+	['O', 'Open session'],
+	['G', 'Toggle graph'],
+];
 
 export function Help({ onClose }: { onClose: () => void }) {
 	return (
 		<div class="help" role="dialog" aria-label="Search help">
-			<button class="icon close" onClick={onClose} aria-label="Close"><Icon name="close" /></button>
-			<table>{QUERIES.map(([q, d]) => <tr key={q}><td><code>{q}</code></td><td>{d}</td></tr>)}</table>
-			<div class="keys">{KEYS.map(([k, d]) => <span key={k}><kbd>{k}</kbd> {d}</span>)}</div>
+			<button type="button" class="icon close" onClick={onClose} aria-label="Close">
+				<Icon name="close" />
+			</button>
+			<table>
+				{QUERIES.map(([q, d]) => (
+					<tr key={q}>
+						<td>
+							<code>{q}</code>
+						</td>
+						<td>{d}</td>
+					</tr>
+				))}
+			</table>
+			<div class="keys">
+				{KEYS.map(([k, d]) => (
+					<span key={k}>
+						<kbd>{k}</kbd> {d}
+					</span>
+				))}
+			</div>
 		</div>
 	);
 }

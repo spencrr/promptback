@@ -1,18 +1,29 @@
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import type { EmbeddingProvider } from './embed/provider.js';
-import { type EmbeddingConfig, NO_EMBEDDING, createEmbeddingProvider } from './embed/registry.js';
+import { createEmbeddingProvider, type EmbeddingConfig, NO_EMBEDDING } from './embed/registry.js';
 import { defaultIndexDir } from './paths.js';
-import { type PluginOptionsError, type Registry, parseOptions } from './registry.js';
-import { type ChunkOptions, DEFAULT_CHUNK_OPTIONS, chunkText } from './search/chunk.js';
+import { type PluginOptionsError, parseOptions, type Registry } from './registry.js';
+import { type ChunkOptions, chunkText, DEFAULT_CHUNK_OPTIONS } from './search/chunk.js';
 import { CorpusCache } from './search/corpus.js';
 import { DEFAULT_RANKING, type RankingOptions, Searcher, wantsDense } from './search/searcher.js';
 import type { PromptSourcePlugin, SourceContext } from './sources/base.js';
 import { promptSources } from './sources/registry.js';
 import { type PromptMeta, Store, type StoredPrompt } from './store.js';
-import type { ExploreResult, IndexStatus, PromptOrigin, PromptRecord, RecentSession, SearchQuery, SearchResult, SessionInfo, SyncProgress, SyncResult } from './types.js';
+import type {
+	ExploreResult,
+	IndexStatus,
+	PromptOrigin,
+	PromptRecord,
+	RecentSession,
+	SearchQuery,
+	SearchResult,
+	SessionInfo,
+	SyncProgress,
+	SyncResult,
+} from './types.js';
 import { errorMessage, yieldToLoop } from './util/fs.js';
 
 /** Per-source options by source id, each validated by that source's schema (`enabled` is common to all). */
@@ -79,9 +90,9 @@ export function migrateSourceSettings(saved: unknown): SourceSettings {
 	}
 	const sources: Record<string, unknown> = {};
 	if (s.copilotHome === null) {
-		sources['copilot'] = { enabled: false };
+		sources.copilot = { enabled: false };
 	} else if (typeof s.copilotHome === 'string') {
-		sources['copilot'] = { home: s.copilotHome };
+		sources.copilot = { home: s.copilotHome };
 	}
 	if (s.vscodeChat === false) {
 		sources['vscode-chat'] = { enabled: false };
@@ -115,7 +126,10 @@ export class PromptSearchEngine {
 		this.chunkOpts = { ...DEFAULT_CHUNK_OPTIONS, ...opts.chunking };
 		this.sources = opts.sourceRegistry ?? promptSources;
 		this.corpus = new CorpusCache(this.store, () => this.provider);
-		this.searcher = new Searcher(this.store, this.corpus, () => this.provider, { ...DEFAULT_RANKING, ...opts.ranking });
+		this.searcher = new Searcher(this.store, this.corpus, () => this.provider, {
+			...DEFAULT_RANKING,
+			...opts.ranking,
+		});
 	}
 
 	static open(opts: EngineOptions = {}): PromptSearchEngine {
@@ -139,16 +153,18 @@ export class PromptSearchEngine {
 		this.providerPromise ??= (async () => {
 			try {
 				const t = Date.now();
-				const p = this.opts.embeddingProvider ?? await createEmbeddingProvider(this.embeddingConfig, {
-					cacheDir: path.join(this.indexDir, 'models'),
-					searchDirs: this.opts.modelSearchDirs,
-					allowDownload: this.opts.allowModelDownload ?? true,
-					mirror: this.opts.modelMirror,
-					onProgress: m => {
-						this.log(m);
-						onProgress?.(m);
-					},
-				});
+				const p =
+					this.opts.embeddingProvider ??
+					(await createEmbeddingProvider(this.embeddingConfig, {
+						cacheDir: path.join(this.indexDir, 'models'),
+						searchDirs: this.opts.modelSearchDirs,
+						allowDownload: this.opts.allowModelDownload ?? true,
+						mirror: this.opts.modelMirror,
+						onProgress: m => {
+							this.log(m);
+							onProgress?.(m);
+						},
+					}));
 				this.provider = p;
 				this.providerError = undefined;
 				if (p) {
@@ -161,7 +177,6 @@ export class PromptSearchEngine {
 			} catch (e) {
 				this.providerError = `Embedding model unavailable: ${errorMessage(e)}`;
 				this.log(this.providerError);
-				return undefined;
 			} finally {
 				this.providerPromise = undefined;
 			}
@@ -187,12 +202,14 @@ export class PromptSearchEngine {
 
 	/** Incrementally ingests all sources and embeds pending chunks. Concurrent calls share one run. */
 	sync(opts: SyncOptions = {}): Promise<SyncResult> {
-		this.syncing ??= this.doSync(opts).finally(() => (this.syncing = undefined));
+		this.syncing ??= this.doSync(opts).finally(() => {
+			this.syncing = undefined;
+		});
 		return this.syncing;
 	}
 
 	get isSyncing(): boolean {
-		return !!this.syncing;
+		return Boolean(this.syncing);
 	}
 
 	private async doSync(opts: SyncOptions): Promise<SyncResult> {
@@ -203,7 +220,15 @@ export class PromptSearchEngine {
 		let embedded = 0;
 		if (!this.store.tryAcquireLease(this.owner, LEASE_TTL)) {
 			this.log('Another process is indexing; using its results.');
-			return { addedPrompts: 0, removedPrompts: 0, embeddedChunks: 0, pendingChunks: 0, errors: [], tookMs: 0, leader: false };
+			return {
+				addedPrompts: 0,
+				removedPrompts: 0,
+				embeddedChunks: 0,
+				pendingChunks: 0,
+				errors: [],
+				tookMs: 0,
+				leader: false,
+			};
 		}
 		try {
 			opts.onProgress?.({ phase: 'scan', message: 'Scanning prompt history…' });
@@ -223,7 +248,9 @@ export class PromptSearchEngine {
 				}
 				let options: { enabled: boolean };
 				try {
-					options = parseOptions(this.sources.kind, source, settings.sources[source.id]) as { enabled: boolean };
+					options = parseOptions(this.sources.kind, source, settings.sources[source.id]) as {
+						enabled: boolean;
+					};
 				} catch (e) {
 					errors.push((e as PluginOptionsError).message);
 					continue;
@@ -259,9 +286,20 @@ export class PromptSearchEngine {
 			}
 			const p = this.provider;
 			const pending = p ? this.store.countPendingChunks(p.info.fingerprint, this.embedOrigins) : 0;
-			opts.onProgress?.({ phase: 'done', message: `Indexed: +${added} / -${removed} prompts, ${embedded} chunks embedded` });
+			opts.onProgress?.({
+				phase: 'done',
+				message: `Indexed: +${added} / -${removed} prompts, ${embedded} chunks embedded`,
+			});
 			this.lastErrors = errors.slice(0, 50);
-			return { addedPrompts: added, removedPrompts: removed, embeddedChunks: embedded, pendingChunks: pending, errors: this.lastErrors, tookMs: Date.now() - t0, leader: true };
+			return {
+				addedPrompts: added,
+				removedPrompts: removed,
+				embeddedChunks: embedded,
+				pendingChunks: pending,
+				errors: this.lastErrors,
+				tookMs: Date.now() - t0,
+				leader: true,
+			};
 		} finally {
 			this.store.releaseLease(this.owner);
 		}
@@ -292,14 +330,28 @@ export class PromptSearchEngine {
 	}
 
 	/** The source plugins and the options they would run with (validated), for status displays. */
-	describeSources(): { readonly id: string; readonly label: string; readonly enabled: boolean; readonly options: unknown; readonly error?: string }[] {
+	describeSources(): {
+		readonly id: string;
+		readonly label: string;
+		readonly enabled: boolean;
+		readonly options: unknown;
+		readonly error?: string;
+	}[] {
 		const settings = this.sourceSettings();
 		return this.sources.list().map(source => {
 			try {
-				const options = parseOptions(this.sources.kind, source, settings.sources[source.id]) as { enabled: boolean };
+				const options = parseOptions(this.sources.kind, source, settings.sources[source.id]) as {
+					enabled: boolean;
+				};
 				return { id: source.id, label: source.label, enabled: options.enabled, options };
 			} catch (e) {
-				return { id: source.id, label: source.label, enabled: false, options: settings.sources[source.id], error: errorMessage(e) };
+				return {
+					id: source.id,
+					label: source.label,
+					enabled: false,
+					options: settings.sources[source.id],
+					error: errorMessage(e),
+				};
 			}
 		});
 	}
@@ -332,7 +384,12 @@ export class PromptSearchEngine {
 				errors.push(`Embedding failed: ${errorMessage(e)}`);
 				break;
 			}
-			this.store.transaction(() => this.store.saveEmbeddings(fp, batch.map((b, i) => ({ hash: b.hash, vector: vecs[i]! }))));
+			this.store.transaction(() =>
+				this.store.saveEmbeddings(
+					fp,
+					batch.map((b, i) => ({ hash: b.hash, vector: vecs[i]! })),
+				),
+			);
 			done += batch.length;
 			sinceBump += batch.length;
 			if (sinceBump >= 256) {
@@ -398,13 +455,14 @@ export class PromptSearchEngine {
 			return [];
 		}
 		const all = [...this.corpus.get().sessions.values()];
-		const ids = (s: SessionInfo) => [s.key, s.sessionId, s.agentHostSessionId].flatMap(v => (v ? [v.toLowerCase()] : []));
+		const ids = (s: SessionInfo) =>
+			[s.key, s.sessionId, s.agentHostSessionId].flatMap(v => (v ? [v.toLowerCase()] : []));
 		const exact = all.filter(s => ids(s).includes(q));
-		return exact.length ? exact : all.filter(s => ids(s).some(v => v.startsWith(q)));
+		return exact.length > 0 ? exact : all.filter(s => ids(s).some(v => v.startsWith(q)));
 	}
 
 	get modelLoaded(): boolean {
-		return !!this.provider;
+		return Boolean(this.provider);
 	}
 
 	/** Most recently active sessions with your own prompts (newest first), for the sidebar. */
@@ -420,12 +478,17 @@ export class PromptSearchEngine {
 			.map(([key, list]) => ({ key, list, last: Math.max(...list.map(m => m.ts)) }))
 			.sort((a, b) => b.last - a.last)
 			.slice(0, limit);
-		const previews = this.store.getPreviews(recent.flatMap(r => r.list.map(m => m.rowid)), 160);
+		const previews = this.store.getPreviews(
+			recent.flatMap(r => r.list.map(m => m.rowid)),
+			160,
+		);
 		return recent.map(({ key, list, last }) => ({
 			session: corpus.sessions.get(key) ?? { key, source: 'copilot', sessionId: key },
 			promptCount: list.length,
 			lastActivity: last,
-			prompts: list.sort((a, b) => a.seq - b.seq).slice(-promptsPerSession)
+			prompts: list
+				.sort((a, b) => a.seq - b.seq)
+				.slice(-promptsPerSession)
 				.map(m => ({ id: m.id, timestamp: m.ts, preview: previews.get(m.rowid) ?? '' })),
 		}));
 	}
@@ -467,7 +530,7 @@ export class PromptSearchEngine {
 			pendingChunks: pending,
 			embeddingPaused: this.embeddingPaused,
 			model: this.provider?.info.displayName ?? this.store.getMeta('modelName'),
-			modelLoaded: !!this.provider,
+			modelLoaded: Boolean(this.provider),
 			lastSyncAt: last ? Number(last) : undefined,
 			errors: [...(this.providerError ? [this.providerError] : []), ...this.lastErrors],
 		};

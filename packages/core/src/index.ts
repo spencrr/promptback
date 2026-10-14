@@ -1,52 +1,65 @@
-export * from './types.js';
-export { PromptSearchEngine, migrateSourceSettings, type EngineOptions, type SourceOptionsById, type SyncOptions } from './engine.js';
-export { Registry, RegistryError, PluginOptionsError, parseOptions, type Plugin, type ConfigurablePlugin } from './registry.js';
+export { downloadModel, resolveModelDir } from './embed/modelStore.js';
+export {
+	DEFAULT_LOCAL_MODEL,
+	getModelSpec,
+	LOCAL_MODELS,
+	type LocalModelSpec,
+	loadModelManifest,
+	localModelSpecSchema,
+	localModels,
+	MODEL_MANIFEST,
+	type ModelFile,
+} from './embed/models.js';
 export type { EmbeddingProvider, EmbeddingProviderInfo } from './embed/provider.js';
 export {
-	embeddingProviders,
 	createEmbeddingProvider,
-	localProvider,
-	openAICompatibleProvider,
-	noneProvider,
-	NO_EMBEDDING,
 	type EmbeddingConfig,
 	type EmbeddingProviderPlugin,
+	embeddingProviders,
+	localProvider,
+	NO_EMBEDDING,
+	noneProvider,
+	openAICompatibleProvider,
 	type ProviderEnvironment,
 } from './embed/registry.js';
 export {
-	LOCAL_MODELS,
-	DEFAULT_LOCAL_MODEL,
-	MODEL_MANIFEST,
-	localModels,
-	localModelSpecSchema,
-	getModelSpec,
-	loadModelManifest,
-	type LocalModelSpec,
-	type ModelFile,
-} from './embed/models.js';
-export { downloadModel, resolveModelDir } from './embed/modelStore.js';
+	type EngineOptions,
+	migrateSourceSettings,
+	PromptSearchEngine,
+	type SourceOptionsById,
+	type SyncOptions,
+} from './engine.js';
+export { agentsWindowLink, type SessionOpenTarget, sessionOpenTargets } from './links.js';
+export { copilotHome, defaultIndexDir, vscodeUserDataRoots } from './paths.js';
+export type { HostEvent, HostInitOptions, HostMethods, HostRequest, HostResponse } from './protocol.js';
 export {
-	promptSources,
-	sourceCatalog,
-	sourceAliases,
-	clientLabel,
+	type ConfigurablePlugin,
+	type Plugin,
+	PluginOptionsError,
+	parseOptions,
+	Registry,
+	RegistryError,
+} from './registry.js';
+export { type Chunk, type ChunkOptions, chunkText, DEFAULT_CHUNK_OPTIONS } from './search/chunk.js';
+export { type ParsedQuery, parseDateRange, parseQuery } from './search/query.js';
+export { DEFAULT_RANKING, type RankingOptions } from './search/searcher.js';
+export { agentHostSource } from './sources/agentHostSource.js';
+export { claudeCodeSource, claudeHome } from './sources/claudeCode.js';
+export { codexHome, codexSource } from './sources/codex.js';
+export { copilotSource } from './sources/copilotSource.js';
+export {
 	baseSourceOptions,
+	clientLabel,
 	type PromptSourcePlugin,
+	promptSources,
 	type SourceContext,
 	type SourceStore,
 	type SourceSyncResult,
+	sourceAliases,
+	sourceCatalog,
 } from './sources/registry.js';
-export { copilotSource } from './sources/copilotSource.js';
-export { vscodeChatSource } from './sources/vscodeChatSource.js';
-export { agentHostSource } from './sources/agentHostSource.js';
-export { claudeCodeSource, claudeHome } from './sources/claudeCode.js';
-export { codexSource, codexHome } from './sources/codex.js';
-export { syncSessionFiles, type SessionFileRead } from './sources/sessionFiles.js';
-export { parseQuery, parseDateRange, type ParsedQuery } from './search/query.js';
-export { DEFAULT_RANKING, type RankingOptions } from './search/searcher.js';
-export { chunkText, DEFAULT_CHUNK_OPTIONS, type Chunk, type ChunkOptions } from './search/chunk.js';
-export { agentsWindowLink, sessionOpenTargets, type SessionOpenTarget } from './links.js';
-export { copilotHome, defaultIndexDir, vscodeUserDataRoots } from './paths.js';
+export { type SessionFileRead, syncSessionFiles } from './sources/sessionFiles.js';
 export { replayMutationLog } from './sources/vscodeChat.js';
+export { vscodeChatSource } from './sources/vscodeChatSource.js';
 export type { StoredPrompt } from './store.js';
-export type { HostEvent, HostInitOptions, HostMethods, HostRequest, HostResponse } from './protocol.js';
+export * from './types.js';

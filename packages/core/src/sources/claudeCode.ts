@@ -5,8 +5,17 @@ import * as z from 'zod/v4';
 import type { PromptOrigin, PromptRecord, SessionInfo, SessionOpenTarget } from '../types.js';
 import { safeReaddir } from '../util/fs.js';
 import { findGitRoot, repoName } from '../util/git.js';
-import { type PromptSourcePlugin, baseSourceOptions } from './base.js';
-import { type SessionFileRead, firstLine, forEachJsonLine, leadingTag, readerError, syncSessionFiles, textContent, toEpochMs } from './sessionFiles.js';
+import { baseSourceOptions, type PromptSourcePlugin } from './base.js';
+import {
+	firstLine,
+	forEachJsonLine,
+	leadingTag,
+	readerError,
+	type SessionFileRead,
+	syncSessionFiles,
+	textContent,
+	toEpochMs,
+} from './sessionFiles.js';
 
 export const claudeCodeSourceOptions = baseSourceOptions.extend({
 	/** Claude Code configuration directory; default `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
@@ -17,7 +26,7 @@ export type ClaudeCodeSourceOptions = z.infer<typeof claudeCodeSourceOptions>;
 
 /** Mirrors Claude Code: `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
 export function claudeHome(): string {
-	return process.env['CLAUDE_CONFIG_DIR'] || path.join(os.homedir(), '.claude');
+	return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 }
 
 export interface ClaudeSessionFile {
@@ -48,7 +57,8 @@ export function claudeSessionKey(sessionId: string): string {
 /** The summary Claude Code inserts as a user message when a compacted session continues. */
 const CONTINUATION = /^This session is being continued from a previous conversation/;
 
-const INJECTED_TAG = /^(task-notification|system-reminder|local-command-.*|command-.*|bash-.*|ide|ide_.*|user-prompt-submit-hook.*)$/;
+const INJECTED_TAG =
+	/^(task-notification|system-reminder|local-command-.*|command-.*|bash-.*|ide|ide_.*|user-prompt-submit-hook.*)$/;
 
 interface ClaudeUserLine {
 	readonly uuid?: unknown;
@@ -83,7 +93,10 @@ function clientFor(entrypoint: unknown): string {
 }
 
 /** Projects one Claude Code session log to prompts and session metadata. */
-export function readClaudeSession(file: ClaudeSessionFile, size: number): SessionFileRead & { readonly error?: string } {
+export function readClaudeSession(
+	file: ClaudeSessionFile,
+	size: number,
+): SessionFileRead & { readonly error?: string } {
 	const key = claudeSessionKey(file.sessionId);
 	const prompts: PromptRecord[] = [];
 	let title: string | undefined;
@@ -100,19 +113,19 @@ export function readClaudeSession(file: ClaudeSessionFile, size: number): Sessio
 		file.path,
 		size,
 		entry => {
-			const ts = toEpochMs(entry['timestamp']);
+			const ts = toEpochMs(entry.timestamp);
 			if (ts !== undefined) {
 				createdAt = createdAt === undefined ? ts : Math.min(createdAt, ts);
 				updatedAt = updatedAt === undefined ? ts : Math.max(updatedAt, ts);
 			}
-			switch (entry['type']) {
+			switch (entry.type) {
 				case 'user': {
 					index++;
 					const line = entry as ClaudeUserLine;
 					const text = textContent(line.message?.content, ['text']);
-					cwd ??= typeof entry['cwd'] === 'string' ? entry['cwd'] : undefined;
-					branch ??= typeof entry['gitBranch'] === 'string' ? entry['gitBranch'] : undefined;
-					client ??= clientFor(entry['entrypoint']);
+					cwd ??= typeof entry.cwd === 'string' ? entry.cwd : undefined;
+					branch ??= typeof entry.gitBranch === 'string' ? entry.gitBranch : undefined;
+					client ??= clientFor(entry.entrypoint);
 					if (!text.trim()) {
 						return;
 					}
@@ -128,7 +141,7 @@ export function readClaudeSession(file: ClaudeSessionFile, size: number): Sessio
 					return;
 				}
 				case 'assistant': {
-					const m = (entry['message'] as { model?: unknown } | undefined)?.model;
+					const m = (entry.message as { model?: unknown } | undefined)?.model;
 					if (typeof m === 'string') {
 						model = m;
 						firstModel ??= m;
@@ -136,10 +149,10 @@ export function readClaudeSession(file: ClaudeSessionFile, size: number): Sessio
 					return;
 				}
 				case 'ai-title':
-					title = typeof entry['aiTitle'] === 'string' ? entry['aiTitle'] : title;
+					title = typeof entry.aiTitle === 'string' ? entry.aiTitle : title;
 					return;
 				case 'summary':
-					summary = typeof entry['summary'] === 'string' ? entry['summary'] : summary;
+					summary = typeof entry.summary === 'string' ? entry.summary : summary;
 					return;
 				default:
 			}
@@ -179,9 +192,21 @@ export const claudeCodeSource: PromptSourcePlugin<ClaudeCodeSourceOptions> = {
 	aliases: ['claude'],
 	options: claudeCodeSourceOptions,
 	clients: [
-		{ id: 'claude/cli', label: 'Claude Code', icon: 'terminal', color: 'orange', aliases: ['claude-code', 'claude-cli'] },
+		{
+			id: 'claude/cli',
+			label: 'Claude Code',
+			icon: 'terminal',
+			color: 'orange',
+			aliases: ['claude-code', 'claude-cli'],
+		},
 		{ id: 'claude/sdk', label: 'Claude Agent SDK', icon: 'code', color: 'orange', aliases: ['claude-sdk'] },
-		{ id: 'claude/vscode', label: 'Claude Code (VS Code)', icon: 'vscode', color: 'orange', aliases: ['claude-vscode'] },
+		{
+			id: 'claude/vscode',
+			label: 'Claude Code (VS Code)',
+			icon: 'vscode',
+			color: 'orange',
+			aliases: ['claude-vscode'],
+		},
 	],
 
 	sync(o, ctx) {
@@ -195,12 +220,19 @@ export const claudeCodeSource: PromptSourcePlugin<ClaudeCodeSourceOptions> = {
 				if (r.error) {
 					errors.push(r.error);
 				}
-				return r.prompts.length ? r : undefined;
+				return r.prompts.length > 0 ? r : undefined;
 			},
 		}).then(r => ({ ...r, errors: [...r.errors, ...errors] }));
 	},
 
 	openTargets(s: SessionInfo): SessionOpenTarget[] {
-		return [{ kind: 'terminal-resume', label: 'Resume with Claude Code', command: `claude --resume ${s.sessionId}`, cwd: s.cwd }];
+		return [
+			{
+				kind: 'terminal-resume',
+				label: 'Resume with Claude Code',
+				command: `claude --resume ${s.sessionId}`,
+				cwd: s.cwd,
+			},
+		];
 	},
 };

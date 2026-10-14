@@ -1,6 +1,6 @@
-import * as vscode from 'vscode';
 import { embeddingProviders, localModels, sourceCatalog } from '@promptback/core';
 import { sessionOpenTargets } from '@promptback/core/links';
+import * as vscode from 'vscode';
 import { copyPrompt, insertIntoChat, openSession, previewPrompt } from '../actions.js';
 import type { HostClient } from '../hostClient.js';
 import type { FromWebview, IndexAction, IndexChoices, IndexSettings, OpenRequest, ToWebview } from './messages.js';
@@ -33,9 +33,10 @@ const SETTING_KEYS: Record<keyof IndexSettings, string> = {
 
 /** Opens (or reveals) the Explorer, optionally with a query, view and a prompt to select. */
 export async function openExplorer(provider: ExplorerProvider, request?: Partial<OpenRequest>): Promise<void> {
-	const open = request && (request.query !== undefined || request.view || request.selectId || request.panel)
-		? { query: request.query ?? '', view: request.view, selectId: request.selectId, panel: request.panel }
-		: undefined;
+	const open =
+		request && (request.query !== undefined || request.view || request.selectId || request.panel)
+			? { query: request.query ?? '', view: request.view, selectId: request.selectId, panel: request.panel }
+			: undefined;
 	if (open) {
 		provider.pending = open;
 	}
@@ -51,7 +52,10 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 	pending: OpenRequest | undefined;
 	private readonly panels = new Set<vscode.WebviewPanel>();
 
-	constructor(private readonly context: vscode.ExtensionContext, private readonly host: HostClient) { }
+	constructor(
+		private readonly context: vscode.ExtensionContext,
+		private readonly host: HostClient,
+	) {}
 
 	static register(context: vscode.ExtensionContext, host: HostClient): ExplorerProvider {
 		const provider = new ExplorerProvider(context, host);
@@ -83,7 +87,7 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 			void p.webview.postMessage(msg);
 		}
 		// A request delivered to an open Explorer must not leak into the next one opened.
-		if (msg.type === 'open' && this.panels.size) {
+		if (msg.type === 'open' && this.panels.size > 0) {
 			this.pending = undefined;
 		}
 	}
@@ -92,14 +96,19 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 		const settings = readSettings();
 		const choices = indexChoices();
 		try {
-			return { type: 'indexStatus', status: await this.host.request('status', undefined as never), settings, choices };
+			return {
+				type: 'indexStatus',
+				status: await this.host.request('status', undefined as never),
+				settings,
+				choices,
+			};
 		} catch (e) {
 			return { type: 'indexStatus', settings, choices, error: e instanceof Error ? e.message : String(e) };
 		}
 	}
 
 	private async postStatusToAll(): Promise<void> {
-		if (this.panels.size) {
+		if (this.panels.size > 0) {
 			this.postToAll(await this.statusMessage());
 		}
 	}
@@ -120,7 +129,8 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 		const sub = panel.webview.onDidReceiveMessage(async (msg: FromWebview) => {
 			switch (msg.type) {
 				case 'ready': {
-					const reducedMotion = vscode.workspace.getConfiguration('workbench').get<string>('reduceMotion') === 'on';
+					const reducedMotion =
+						vscode.workspace.getConfiguration('workbench').get<string>('reduceMotion') === 'on';
 					post({ type: 'init', reducedMotion, catalog: sourceCatalog(), ...this.pending });
 					this.pending = undefined;
 					void this.host.request('warm', undefined as never).catch(() => undefined);
@@ -128,9 +138,17 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 				}
 				case 'query':
 					try {
-						post({ type: 'result', requestId: msg.requestId, result: await this.host.request('explore', msg.text) });
+						post({
+							type: 'result',
+							requestId: msg.requestId,
+							result: await this.host.request('explore', msg.text),
+						});
 					} catch (e) {
-						post({ type: 'error', requestId: msg.requestId, message: e instanceof Error ? e.message : String(e) });
+						post({
+							type: 'error',
+							requestId: msg.requestId,
+							message: e instanceof Error ? e.message : String(e),
+						});
 					}
 					return;
 				case 'detail': {
@@ -144,7 +162,13 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 						requestId: msg.requestId,
 						prompt: r.prompt,
 						session: r.session,
-						sessionPrompts: all.map(p => ({ id: p.id, seq: p.seq, timestamp: p.timestamp, origin: p.origin, text: p.text.slice(0, 300) })),
+						sessionPrompts: all.map(p => ({
+							id: p.id,
+							seq: p.seq,
+							timestamp: p.timestamp,
+							origin: p.origin,
+							text: p.text.slice(0, 300),
+						})),
 						openTargets: r.session ? sessionOpenTargets(r.session) : [],
 					});
 					return;
@@ -155,10 +179,14 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 						return;
 					}
 					switch (msg.action) {
-						case 'copy': return copyPrompt(r.prompt);
-						case 'insert': return insertIntoChat(r.prompt);
-						case 'preview': return previewPrompt(r.prompt, r.session);
-						case 'open': return r.session ? openSession(r.session) : undefined;
+						case 'copy':
+							return copyPrompt(r.prompt);
+						case 'insert':
+							return insertIntoChat(r.prompt);
+						case 'preview':
+							return previewPrompt(r.prompt, r.session);
+						case 'open':
+							return r.session ? openSession(r.session) : undefined;
 					}
 					return;
 				}
@@ -191,14 +219,20 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 				return;
 			case 'rebuild': {
 				const ok = await vscode.window.showWarningMessage(
-					'Re-embed every prompt with the current model? Keyword search keeps working while it runs.', { modal: true }, 'Rebuild');
+					'Re-embed every prompt with the current model? Keyword search keeps working while it runs.',
+					{ modal: true },
+					'Rebuild',
+				);
 				if (ok) {
 					await this.host.request('rebuildEmbeddings', undefined as never);
 				}
 				return;
 			}
 			case 'openSettings':
-				await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${this.context.extension.id}`);
+				await vscode.commands.executeCommand(
+					'workbench.action.openSettings',
+					`@ext:${this.context.extension.id}`,
+				);
 				return;
 			case 'showLog':
 				await vscode.commands.executeCommand('promptback.showLog');
@@ -245,7 +279,9 @@ export class ExplorerProvider implements vscode.CustomReadonlyEditorProvider {
 /** The registered embedding providers and local models, so the panel never hard-codes them. */
 function indexChoices(): IndexChoices {
 	return {
-		providers: embeddingProviders.list().map(p => ({ id: p.id, label: p.label, description: p.description, local: p.local })),
+		providers: embeddingProviders
+			.list()
+			.map(p => ({ id: p.id, label: p.label, description: p.description, local: p.local })),
 		models: localModels.list().map(m => ({
 			id: m.id,
 			label: m.displayName,
@@ -258,8 +294,13 @@ function readSettings(): IndexSettings {
 	const c = vscode.workspace.getConfiguration('promptback');
 	const get = <K extends keyof IndexSettings>(k: K) => c.get(SETTING_KEYS[k]) as IndexSettings[K];
 	return {
-		provider: get('provider'), model: get('model'), threads: get('threads'), embedOrigins: get('embedOrigins'),
-		allowDownload: get('allowDownload'), openaiBaseUrl: get('openaiBaseUrl'), openaiModel: get('openaiModel'),
+		provider: get('provider'),
+		model: get('model'),
+		threads: get('threads'),
+		embedOrigins: get('embedOrigins'),
+		allowDownload: get('allowDownload'),
+		openaiBaseUrl: get('openaiBaseUrl'),
+		openaiModel: get('openaiModel'),
 		backgroundIntervalMinutes: get('backgroundIntervalMinutes'),
 	};
 }
@@ -271,12 +312,16 @@ async function updateSetting(key: keyof IndexSettings, value: unknown): Promise<
 	if (key === 'provider' && value === 'openai-compatible') {
 		const ok = await vscode.window.showWarningMessage(
 			'A remote embedding endpoint receives the text of your prompts. Only continue for endpoints you trust (e.g. Azure OpenAI in your tenant, or a local Ollama).',
-			{ modal: true }, 'Use Remote Endpoint');
+			{ modal: true },
+			'Use Remote Endpoint',
+		);
 		if (!ok) {
 			return;
 		}
 	}
-	await vscode.workspace.getConfiguration('promptback').update(SETTING_KEYS[key], value, vscode.ConfigurationTarget.Global);
+	await vscode.workspace
+		.getConfiguration('promptback')
+		.update(SETTING_KEYS[key], value, vscode.ConfigurationTarget.Global);
 }
 
 /** Backing file system for the Explorer's virtual resource. "Reopen With > Text Editor" can't be hidden, so it explains itself. */
@@ -288,7 +333,13 @@ class EmptyReadonlyFs implements vscode.FileSystemProvider {
 		return new vscode.Disposable(() => undefined);
 	}
 	stat(): vscode.FileStat {
-		return { type: vscode.FileType.File, ctime: 0, mtime: 0, size: this.content.byteLength, permissions: vscode.FilePermission.Readonly };
+		return {
+			type: vscode.FileType.File,
+			ctime: 0,
+			mtime: 0,
+			size: this.content.byteLength,
+			permissions: vscode.FilePermission.Readonly,
+		};
 	}
 	readDirectory(): [string, vscode.FileType][] {
 		return [];

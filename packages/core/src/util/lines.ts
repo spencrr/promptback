@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 
-const READ_CHUNK = 1 << 20;
+const READ_CHUNK = 1_048_576;
 const HEAD_BYTES = 96;
 
 export interface ScanLinesOptions {

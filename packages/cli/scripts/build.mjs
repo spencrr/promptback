@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noConsole: build scripts report progress on stdout.
 // Bundles the CLI (and the core it depends on) into one ESM file. onnxruntime-node stays external: it is a native
 // addon installed next to the CLI as a regular dependency.
 import * as fs from 'node:fs';
@@ -19,6 +20,7 @@ await esbuild.build({
 	external: ['onnxruntime-node'],
 	// Bundled dependencies keep their license headers at the end of the file.
 	legalComments: 'eof',
+	// biome-ignore lint/style/useNamingConvention: compile-time constant, named like one.
 	define: { __PROMPTBACK_VERSION__: JSON.stringify(pkg.version) },
 	banner: {
 		// Bundled CommonJS dependencies expect `require`. (esbuild keeps the entry file's `#!` line above the banner.)

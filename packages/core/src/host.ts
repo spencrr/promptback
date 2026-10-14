@@ -50,7 +50,9 @@ function init(opts: HostInitOptions) {
 	}
 	const idle = opts.idleReleaseMs ?? 15 * 60_000;
 	if (idle > 0) {
-		timers.push(setInterval(() => void engine?.releaseIfIdle(idle).then(freed => freed && collectGarbage()), 60_000));
+		timers.push(
+			setInterval(() => void engine?.releaseIfIdle(idle).then(freed => freed && collectGarbage()), 60_000),
+		);
 	}
 	setTimeout(backgroundSync, 0);
 	return { indexDir: engine.indexDir };
@@ -100,7 +102,7 @@ async function handle(req: HostRequest): Promise<unknown> {
 }
 
 process.on('message', (msg: HostRequest) => {
-	if (!msg || msg.type !== 'req') {
+	if (msg?.type !== 'req') {
 		return;
 	}
 	handle(msg).then(

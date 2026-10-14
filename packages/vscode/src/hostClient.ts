@@ -1,8 +1,11 @@
-import { fork, type ChildProcess } from 'node:child_process';
-import * as vscode from 'vscode';
+import { type ChildProcess, fork } from 'node:child_process';
 import type { HostEvent, HostInitOptions, HostMethods, HostResponse, SyncProgress, SyncResult } from '@promptback/core';
+import * as vscode from 'vscode';
 
-type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
+interface Pending {
+	resolve: (v: unknown) => void;
+	reject: (e: Error) => void;
+}
 
 /**
  * Runs the core engine in a child Node process (VS Code's own runtime via ELECTRON_RUN_AS_NODE) so that model
@@ -22,7 +25,10 @@ export class HostClient implements vscode.Disposable {
 	private readonly _onSynced = new vscode.EventEmitter<SyncResult>();
 	readonly onSynced = this._onSynced.event;
 
-	constructor(private readonly hostScript: string, private readonly log: vscode.LogOutputChannel) { }
+	constructor(
+		private readonly hostScript: string,
+		private readonly log: vscode.LogOutputChannel,
+	) {}
 
 	start(options: HostInitOptions): Promise<{ indexDir: string }> {
 		this.initOptions = options;
@@ -101,7 +107,10 @@ export class HostClient implements vscode.Disposable {
 		}
 	}
 
-	request<M extends keyof HostMethods>(method: M, params: Parameters<HostMethods[M]>[0]): Promise<ReturnType<HostMethods[M]>> {
+	request<M extends keyof HostMethods>(
+		method: M,
+		params: Parameters<HostMethods[M]>[0],
+	): Promise<ReturnType<HostMethods[M]>> {
 		const child = this.child;
 		const map = child && this.pending.get(child);
 		if (!child?.connected || !map) {

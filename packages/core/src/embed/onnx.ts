@@ -22,7 +22,9 @@ export class OnnxEmbeddingProvider implements EmbeddingProvider {
 	) {
 		// Pinned models are identified by their revision; manifest models by their graph's hash (or size when unpinned).
 		const graph = spec.files.find(f => f.path === spec.modelFile);
-		const identity = spec.revision ? `${spec.repo}@${spec.revision.slice(0, 12)}:q8` : `${spec.id}@${graph?.sha256?.slice(0, 12) ?? `size${graph?.size ?? 0}`}`;
+		const identity = spec.revision
+			? `${spec.repo}@${spec.revision.slice(0, 12)}:q8`
+			: `${spec.id}@${graph?.sha256?.slice(0, 12) ?? `size${graph?.size ?? 0}`}`;
 		this.info = {
 			fingerprint: `onnx:${identity}:${spec.pooling}`,
 			displayName: spec.displayName,
@@ -33,7 +35,7 @@ export class OnnxEmbeddingProvider implements EmbeddingProvider {
 
 	static async create(spec: LocalModelSpec, modelDir: string, threads = 4): Promise<OnnxEmbeddingProvider> {
 		// Loaded lazily so lexical-only use never touches the native binding.
-		const mod = await import('onnxruntime-node') as typeof Ort & { default?: typeof Ort };
+		const mod = (await import('onnxruntime-node')) as typeof Ort & { default?: typeof Ort };
 		const ort = mod.default ?? mod;
 		const tokenizer = new Tokenizer(
 			JSON.parse(fs.readFileSync(path.join(modelDir, 'tokenizer.json'), 'utf8')),
@@ -56,11 +58,16 @@ export class OnnxEmbeddingProvider implements EmbeddingProvider {
 	async embedDocuments(texts: readonly string[]): Promise<Float32Array[]> {
 		const out = new Array<Float32Array>(texts.length);
 		// Batch similar lengths together to minimize padding.
-		const order = texts.map((t, i) => [i, t.length] as const).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+		const order = texts
+			.map((t, i) => [i, t.length] as const)
+			.sort((a, b) => a[1] - b[1])
+			.map(x => x[0]);
 		for (let b = 0; b < order.length; b += BATCH) {
 			const idx = order.slice(b, b + BATCH);
 			const vecs = await this.run(idx.map(i => this.spec.documentPrefix + texts[i]!));
-			idx.forEach((i, j) => (out[i] = vecs[j]!));
+			for (const [j, i] of idx.entries()) {
+				out[i] = vecs[j]!;
+			}
 		}
 		return out;
 	}
@@ -71,7 +78,7 @@ export class OnnxEmbeddingProvider implements EmbeddingProvider {
 			return ids;
 		}
 		// Keep [CLS] ... and the final [SEP].
-		return [...ids.slice(0, this.spec.maxTokens - 1), ids[ids.length - 1]!];
+		return [...ids.slice(0, this.spec.maxTokens - 1), ids.at(-1)!];
 	}
 
 	private async run(texts: readonly string[]): Promise<Float32Array[]> {
@@ -92,10 +99,10 @@ export class OnnxEmbeddingProvider implements EmbeddingProvider {
 			attention_mask: new Tensor('int64', mask, [n, maxLen]),
 		};
 		if (this.session.inputNames.includes('token_type_ids')) {
-			feeds['token_type_ids'] = new Tensor('int64', new BigInt64Array(n * maxLen), [n, maxLen]);
+			feeds.token_type_ids = new Tensor('int64', new BigInt64Array(n * maxLen), [n, maxLen]);
 		}
 		const outputs = await this.session.run(feeds);
-		const hidden = outputs['last_hidden_state'] ?? outputs[this.session.outputNames[0]!]!;
+		const hidden = outputs.last_hidden_state ?? outputs[this.session.outputNames[0]!]!;
 		const data = hidden.data as Float32Array;
 		const dims = this.spec.dims;
 		const result: Float32Array[] = [];

@@ -1,13 +1,31 @@
 import * as os from 'node:os';
 import type { EmbeddingProvider } from '../embed/provider.js';
 import type { Store } from '../store.js';
-import type { ExploreResult, ExploreRow, SearchFilters, SearchHit, SearchMode, SearchQuery, SearchResult, SessionInfo } from '../types.js';
+import type {
+	ExploreResult,
+	ExploreRow,
+	SearchFilters,
+	SearchHit,
+	SearchMode,
+	SearchQuery,
+	SearchResult,
+	SessionInfo,
+} from '../types.js';
 import { ALL_ORIGINS } from '../types.js';
 import type { Corpus, CorpusCache } from './corpus.js';
 import { type ParsedQuery, parseQuery } from './query.js';
 import {
-	DEFAULT_RANKING, type RankingOptions, type Scored, allowedRows, applyRecency, denseHits, excludedRows, fuse,
-	lexicalHits, lexicalRange, similarityStats,
+	allowedRows,
+	applyRecency,
+	DEFAULT_RANKING,
+	denseHits,
+	excludedRows,
+	fuse,
+	lexicalHits,
+	lexicalRange,
+	type RankingOptions,
+	type Scored,
+	similarityStats,
 } from './rank.js';
 import { clusterTopics } from './topics.js';
 
@@ -49,17 +67,26 @@ export class Searcher {
 		private readonly corpus: CorpusCache,
 		private readonly provider: () => EmbeddingProvider | undefined,
 		private readonly ranking: RankingOptions = DEFAULT_RANKING,
-	) { }
+	) {}
 
 	/** Quick search: top results, identical texts collapsed, at most `maxPerSession` per session. */
 	async search(query: SearchQuery | string, now = Date.now()): Promise<SearchResult> {
 		const t0 = performance.now();
 		const q: SearchQuery = typeof query === 'string' ? { text: query } : query;
 		const limit = q.limit ?? 50;
-		const r = await this.rank(q.text, q.filters, q.mode, { origins: ['human'], includeAcks: false }, now);
+		const r = await this.rank({
+			text: q.text,
+			filters: q.filters,
+			mode: q.mode,
+			defaults: { origins: ['human'], includeAcks: false },
+			now,
+		});
 
 		const collapse = q.collapseDuplicates !== false;
-		const cap = r.parsed.sort === 'recent' || r.isBrowse || r.filters.sessionKey ? Infinity : this.ranking.maxPerSession;
+		const cap =
+			r.parsed.sort === 'recent' || r.isBrowse || r.filters.sessionKey
+				? Number.POSITIVE_INFINITY
+				: this.ranking.maxPerSession;
 		const groups = new Map<string, { head: Scored; dups: Scored[]; more: number }>();
 		const perSession = new Map<string, { shown: number; lastGroup?: { more: number } }>();
 		const picked: { head: Scored; dups: Scored[]; more: number }[] = [];
@@ -96,7 +123,11 @@ export class Searcher {
 			}
 			hits.push({
 				prompt,
-				session: r.corpus.sessions.get(prompt.sessionKey) ?? { key: prompt.sessionKey, source: 'copilot', sessionId: prompt.sessionKey },
+				session: r.corpus.sessions.get(prompt.sessionKey) ?? {
+					key: prompt.sessionKey,
+					source: 'copilot',
+					sessionId: prompt.sessionKey,
+				},
 				score: g.head.score,
 				lexicalRank: g.head.lexRank,
 				semanticRank: g.head.semRank,
@@ -109,8 +140,13 @@ export class Searcher {
 			});
 		}
 		return {
-			query: q.text, freeText: r.parsed.freeText, filters: r.filters, mode: r.mode,
-			semanticUnavailable: r.semanticUnavailable, hits, tookMs: Math.round(performance.now() - t0),
+			query: q.text,
+			freeText: r.parsed.freeText,
+			filters: r.filters,
+			mode: r.mode,
+			semanticUnavailable: r.semanticUnavailable,
+			hits,
+			tookMs: Math.round(performance.now() - t0),
 		};
 	}
 
@@ -121,32 +157,44 @@ export class Searcher {
 	 */
 	async explore(text: string, now = Date.now()): Promise<ExploreResult> {
 		const t0 = performance.now();
-		const r = await this.rank(text, undefined, undefined, { origins: ALL_ORIGINS, includeAcks: true }, now);
+		const r = await this.rank({ text, defaults: { origins: ALL_ORIGINS, includeAcks: true }, now });
 		let matched = r.scored;
 		if (!r.isBrowse) {
-			const cutoff = r.semanticCutoff ?? Infinity;
-			matched = r.scored.filter((s, i) => s.inAnd || (s.similarity ?? -Infinity) >= cutoff || i < this.ranking.minMatches);
+			const cutoff = r.semanticCutoff ?? Number.POSITIVE_INFINITY;
+			matched = r.scored.filter(
+				(s, i) =>
+					s.inAnd || (s.similarity ?? Number.NEGATIVE_INFINITY) >= cutoff || i < this.ranking.minMatches,
+			);
 		}
 
 		const needText = !r.isBrowse;
 		const texts = needText ? this.store.getPromptsByRowid(matched.map(s => s.rowid)) : undefined;
-		const previews = needText ? undefined : this.store.getPreviews(matched.map(s => s.rowid), PREVIEW_CHARS);
+		const previews = needText
+			? undefined
+			: this.store.getPreviews(
+					matched.map(s => s.rowid),
+					PREVIEW_CHARS,
+				);
 		const rows: ExploreRow[] = [];
 		const sessions: Record<string, SessionInfo> = {};
-		const cutoff = r.semanticCutoff ?? Infinity;
+		const cutoff = r.semanticCutoff ?? Number.POSITIVE_INFINITY;
 		for (const s of matched) {
 			const m = r.corpus.meta.get(s.rowid)!;
 			const full = texts?.get(s.rowid)?.text;
-			const preview = full !== undefined ? full.slice(0, PREVIEW_CHARS) : previews?.get(s.rowid);
+			const preview = full === undefined ? previews?.get(s.rowid) : full.slice(0, PREVIEW_CHARS);
 			if (preview === undefined) {
 				continue;
 			}
-			const range = full !== undefined ? (s.inAnd || s.lexRank ? lexicalRange(full, r.parsed) : undefined) ?? s.range : undefined;
+			const range =
+				full === undefined
+					? undefined
+					: ((s.inAnd || s.lexRank ? lexicalRange(full, r.parsed) : undefined) ?? s.range);
 			rows.push({
 				id: m.id,
 				sessionKey: m.sessionKey,
 				preview,
-				snippet: full !== undefined && range && range[0] > PREVIEW_CHARS - 40 ? excerpt(full, range) : undefined,
+				snippet:
+					full !== undefined && range && range[0] > PREVIEW_CHARS - 40 ? excerpt(full, range) : undefined,
 				timestamp: m.ts,
 				origin: m.origin,
 				length: full?.length ?? m.length,
@@ -157,15 +205,25 @@ export class Searcher {
 				score: s.score,
 				similarity: s.similarity,
 				matchedLexical: s.inAnd,
-				matchedSemantic: (s.similarity ?? -Infinity) >= cutoff,
+				matchedSemantic: (s.similarity ?? Number.NEGATIVE_INFINITY) >= cutoff,
 				matchRange: range,
 			});
-			sessions[m.sessionKey] ??= r.corpus.sessions.get(m.sessionKey) ?? { key: m.sessionKey, source: 'copilot', sessionId: m.sessionKey };
+			sessions[m.sessionKey] ??= r.corpus.sessions.get(m.sessionKey) ?? {
+				key: m.sessionKey,
+				source: 'copilot',
+				sessionId: m.sessionKey,
+			};
 		}
 		const { topics, topicOf } = this.topicsFor(r, matched, texts);
 		return {
-			query: text, freeText: r.parsed.freeText, mode: r.mode, semanticUnavailable: r.semanticUnavailable,
-			revision: r.corpus.revision, rows: rows.map(row => ({ ...row, topic: topicOf.get(row.hash) })), sessions, topics,
+			query: text,
+			freeText: r.parsed.freeText,
+			mode: r.mode,
+			semanticUnavailable: r.semanticUnavailable,
+			revision: r.corpus.revision,
+			rows: rows.map(row => ({ ...row, topic: topicOf.get(row.hash) })),
+			sessions,
+			topics,
 			tookMs: Math.round(performance.now() - t0),
 		};
 	}
@@ -186,7 +244,7 @@ export class Searcher {
 		};
 		const picked: Scored[] = [];
 		const hashes = new Set<string>();
-		for (const s of [...matched.filter(isOwn), ...matched.filter(s => !isOwn(s))]) {
+		for (const s of [...matched.filter(isOwn), ...matched.filter(x => !isOwn(x))]) {
 			const hash = r.corpus.meta.get(s.rowid)!.hash;
 			if (picked.length >= TOPIC_CANDIDATES || hashes.has(hash) || !r.corpus.heads.has(s.rowid)) {
 				continue;
@@ -199,34 +257,41 @@ export class Searcher {
 			const i = r.corpus.heads.get(s.rowid)!;
 			return m.vectors.subarray(i * m.dims, (i + 1) * m.dims);
 		});
-		const result = clusterTopics(vectors, picked.map(s => full.get(s.rowid)?.text ?? ''), {
-			exclude: [...r.parsed.terms, ...USER_WORDS],
-			vocabulary: r.corpus.vocabulary(),
-		});
-		picked.forEach((s, i) => topicOf.set(r.corpus.meta.get(s.rowid)!.hash, result.assignment[i]!));
+		const result = clusterTopics(
+			vectors,
+			picked.map(s => full.get(s.rowid)?.text ?? ''),
+			{
+				exclude: [...r.parsed.terms, ...USER_WORDS],
+				vocabulary: r.corpus.vocabulary(),
+			},
+		);
+		for (const [i, s] of picked.entries()) {
+			topicOf.set(r.corpus.meta.get(s.rowid)!.hash, result.assignment[i]!);
+		}
 		return { topics: result.topics, topicOf };
 	}
 
 	/** Shared pipeline: parse → filter → retrieve (lexical, dense) → fuse → recency. */
-	private async rank(
-		text: string,
-		extraFilters: SearchFilters | undefined,
-		requestedMode: SearchMode | undefined,
-		defaults: Parameters<typeof allowedRows>[2],
-		now: number,
-	): Promise<Ranked> {
+	private async rank(req: {
+		readonly text: string;
+		readonly filters?: SearchFilters;
+		readonly mode?: SearchMode;
+		readonly defaults: Parameters<typeof allowedRows>[2];
+		readonly now: number;
+	}): Promise<Ranked> {
+		const { text, filters: extraFilters, mode: requestedMode, defaults, now } = req;
 		const corpus = this.corpus.get();
 		const parsed = parseQuery(text, now);
 		const filters: SearchFilters = { ...extraFilters, ...parsed.filters };
 		const mode = parsed.mode ?? requestedMode ?? 'hybrid';
 		let allowed = allowedRows(corpus, filters, defaults);
 		const excluded = excludedRows(this.store, parsed);
-		if (excluded.size) {
+		if (excluded.size > 0) {
 			allowed = new Set([...allowed].filter(id => !excluded.has(id)));
 		}
 
 		const provider = this.provider();
-		const denseReady = !!provider && !!corpus.matrix?.count;
+		const denseReady = Boolean(provider) && Boolean(corpus.matrix?.count);
 		const wantDense = isDense(parsed, requestedMode);
 		const hasLexical = parsed.terms.length > 0 || parsed.phrases.length > 0;
 		const base = { corpus, parsed, filters, mode, semanticUnavailable: wantDense && !denseReady };
@@ -238,17 +303,27 @@ export class Searcher {
 			return { ...base, scored, isBrowse: true };
 		}
 
-		if (parsed.phrases.length) {
+		if (parsed.phrases.length > 0) {
 			const withPhrases = new Set(lexicalHits(this.store, { ...parsed, terms: [] }).and);
 			allowed = new Set([...allowed].filter(id => withPhrases.has(id)));
 		}
 		const lex = hasLexical && (mode !== 'semantic' || !denseReady) ? lexicalHits(this.store, parsed) : undefined;
-		const dense = wantDense && denseReady ? denseHits(corpus.matrix!, await this.embedQuery(provider!, parsed.freeText), allowed, this.ranking.maxChunkWeight) : undefined;
-		const fused = fuse(parsed, lex, dense, allowed, this.ranking);
+		const dense =
+			wantDense && denseReady
+				? denseHits(
+						corpus.matrix!,
+						await this.embedQuery(provider!, parsed.freeText),
+						allowed,
+						this.ranking.maxChunkWeight,
+					)
+				: undefined;
+		const fused = fuse(parsed, { lex, dense, allowed }, this.ranking);
 
 		const scored = [...fused.values()];
 		if (parsed.sort === 'recent') {
-			scored.forEach(s => (s.score = corpus.meta.get(s.rowid)!.ts));
+			for (const s of scored) {
+				s.score = corpus.meta.get(s.rowid)!.ts;
+			}
 		} else {
 			applyRecency(scored, corpus.meta, this.ranking, now);
 		}
@@ -278,5 +353,8 @@ export class Searcher {
 
 function excerpt(text: string, [start, end]: readonly [number, number]): string {
 	const from = Math.max(0, start - 80);
-	return `${from > 0 ? '…' : ''}${text.slice(from, Math.max(end, from + 240)).replace(/\s+/g, ' ').trim()}…`;
+	return `${from > 0 ? '…' : ''}${text
+		.slice(from, Math.max(end, from + 240))
+		.replace(/\s+/g, ' ')
+		.trim()}…`;
 }

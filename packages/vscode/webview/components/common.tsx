@@ -1,13 +1,23 @@
 /** Small presentational pieces shared by the table, details pane and filters. */
 import type { SessionInfo } from '@promptback/core/types';
-import { type RepoKind, clientInfo, repoInfo, segments } from '../model.js';
+import { clientInfo, type RepoKind, repoInfo, segments } from '../model.js';
 
 export function Icon({ name, title }: { name: string; title?: string }) {
 	return <i class={`codicon codicon-${name}`} title={title} aria-hidden={title ? undefined : 'true'} />;
 }
 
 export function Highlighted({ text, terms }: { text: string; terms: readonly string[] }) {
-	return <>{segments(text, terms).map((s, i) => (s.hit ? <mark key={i}>{s.text}</mark> : s.text))}</>;
+	// Segments have no identity of their own; their offset in this text is the only stable key.
+	let offset = 0;
+	return (
+		<>
+			{segments(text, terms).map(s => {
+				const at = offset;
+				offset += s.text.length;
+				return s.hit ? <mark key={at}>{s.text}</mark> : s.text;
+			})}
+		</>
+	);
 }
 
 /** Where the prompt was sent (Agents window, Copilot CLI, Claude Code, ...), tinted with the client's chart colour. */
@@ -15,7 +25,8 @@ export function SourcePill({ client }: { client?: string }) {
 	const c = clientInfo(client);
 	return (
 		<span class="pill source" style={{ '--pill-color': `var(--vscode-charts-${c.color})` }} title={c.label}>
-			<Icon name={c.icon} />{c.label}
+			<Icon name={c.icon} />
+			{c.label}
 		</span>
 	);
 }
@@ -33,7 +44,7 @@ export function RepoChip({ session, color }: { session?: SessionInfo; color?: st
 	const { label, kind } = repoInfo(session);
 	return (
 		<span class={`chip repo kind-${kind}`} title={`${REPO_TITLES[kind]}: ${session?.cwd ?? label}`}>
-			{color && <span class="dot" style={{ background: color }} />}
+			{color ? <span class="dot" style={{ background: color }} /> : null}
 			<Icon name={REPO_ICONS[kind]} />
 			<span class="text">{label}</span>
 			{kind === 'inferred' && <span class="tag">inferred</span>}

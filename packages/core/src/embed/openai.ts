@@ -46,7 +46,7 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
 		const size = this.opts.batchSize ?? 64;
 		const out: Float32Array[] = [];
 		for (let i = 0; i < texts.length; i += size) {
-			out.push(...await this.call(texts.slice(i, i + size)));
+			out.push(...(await this.call(texts.slice(i, i + size))));
 		}
 		return out;
 	}
@@ -55,11 +55,11 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
 		const maxChars = this.opts.maxChars ?? 8000;
 		const body: Record<string, unknown> = { model: this.opts.model, input: input.map(t => t.slice(0, maxChars)) };
 		if (this.opts.dims) {
-			body['dimensions'] = this.opts.dims;
+			body.dimensions = this.opts.dims;
 		}
 		const headers: Record<string, string> = { 'content-type': 'application/json', ...this.opts.headers };
 		if (this.opts.apiKey) {
-			headers['authorization'] = `Bearer ${this.opts.apiKey}`;
+			headers.authorization = `Bearer ${this.opts.apiKey}`;
 			headers['api-key'] = this.opts.apiKey;
 		}
 		const res = await (this.opts.fetch ?? fetch)(`${this.opts.baseUrl.replace(/\/$/, '')}/embeddings`, {
@@ -69,9 +69,11 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
 		});
 		if (!res.ok) {
 			// The response body is included for diagnosis; request headers (the key) never are.
-			throw new Error(`Embedding request failed: ${res.status} ${res.statusText} ${(await res.text()).slice(0, 300)}`);
+			throw new Error(
+				`Embedding request failed: ${res.status} ${res.statusText} ${(await res.text()).slice(0, 300)}`,
+			);
 		}
-		const json = await res.json() as { data: { index: number; embedding: number[] }[] };
+		const json = (await res.json()) as { data: { index: number; embedding: number[] }[] };
 		const vecs = json.data.sort((a, b) => a.index - b.index).map(d => l2normalize(Float32Array.from(d.embedding)));
 		if (!this.dims && vecs[0]) {
 			this.dims = vecs[0].length;

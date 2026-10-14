@@ -1,11 +1,11 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { createHash } from 'node:crypto';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
-import type { PromptOrigin, PromptRecord, SessionInfo, SourceKind } from './types.js';
 import type { Chunk } from './search/chunk.js';
 import { isAckText } from './search/query.js';
+import type { PromptOrigin, PromptRecord, SessionInfo, SourceKind } from './types.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -61,7 +61,9 @@ export class Store {
 	constructor(readonly file: string) {
 		fs.mkdirSync(path.dirname(file), { recursive: true });
 		this.db = new DatabaseSync(file);
-		this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=10000; PRAGMA foreign_keys=ON;');
+		this.db.exec(
+			'PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=10000; PRAGMA foreign_keys=ON;',
+		);
 		this.migrate();
 	}
 
@@ -111,7 +113,7 @@ export class Store {
 	}
 
 	private addColumn(table: string, column: string, type: string): void {
-		const cols = (this.db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map(r => String(r['name']));
+		const cols = (this.db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map(r => String(r.name));
 		if (!cols.includes(column)) {
 			this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 		}
@@ -147,11 +149,13 @@ export class Store {
 
 	getMeta(key: string): string | undefined {
 		const r = this.stmt('SELECT value FROM meta WHERE key = ?').get(key) as Row | undefined;
-		return r ? String(r['value']) : undefined;
+		return r ? String(r.value) : undefined;
 	}
 
 	setMeta(key: string, value: string): void {
-		this.stmt('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+		this.stmt(
+			'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+		).run(key, value);
 	}
 
 	/** Single-writer lease shared by every window/process using this index. Owner format: `<host>:<pid>:<nonce>`. */
@@ -159,11 +163,12 @@ export class Store {
 		return this.transaction(() => {
 			const now = Date.now();
 			const r = this.stmt('SELECT owner, expires FROM lease WHERE id = 1').get() as Row | undefined;
-			if (r && r['owner'] !== owner && Number(r['expires']) > now && isOwnerAlive(String(r['owner']))) {
+			if (r && r.owner !== owner && Number(r.expires) > now && isOwnerAlive(String(r.owner))) {
 				return false;
 			}
-			this.stmt('INSERT INTO lease(id, owner, expires) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires = excluded.expires')
-				.run(owner, now + ttlMs);
+			this.stmt(
+				'INSERT INTO lease(id, owner, expires) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires = excluded.expires',
+			).run(owner, now + ttlMs);
 			return true;
 		});
 	}
@@ -175,14 +180,19 @@ export class Store {
 	// ---- files (per-source read cursors) --------------------------------------------------------
 
 	setFileState(file: string, kind: string, state: unknown): void {
-		this.stmt('INSERT INTO files(path, kind, state) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET state = excluded.state')
-			.run(file, kind, JSON.stringify(state));
+		this.stmt(
+			'INSERT INTO files(path, kind, state) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET state = excluded.state',
+		).run(file, kind, JSON.stringify(state));
 	}
 
 	/** Loads every cursor of one kind in a single query (avoids thousands of point lookups per sync). */
 	loadFileStates<T>(kind: string): Map<string, T> {
-		return new Map((this.stmt('SELECT path, state FROM files WHERE kind = ?').all(kind) as Row[])
-			.map(r => [String(r['path']), JSON.parse(String(r['state'])) as T]));
+		return new Map(
+			(this.stmt('SELECT path, state FROM files WHERE kind = ?').all(kind) as Row[]).map(r => [
+				String(r.path),
+				JSON.parse(String(r.state)) as T,
+			]),
+		);
 	}
 
 	deleteFile(file: string): void {
@@ -197,9 +207,22 @@ export class Store {
 			ON CONFLICT(key) DO UPDATE SET title = excluded.title, cwd = excluded.cwd, repository = excluded.repository, branch = excluded.branch,
 				client = excluded.client, product = excluded.product, workspace_uri = excluded.workspace_uri,
 				created_at = excluded.created_at, updated_at = excluded.updated_at,
-				repo_inferred = excluded.repo_inferred, workspaceless = excluded.workspaceless`)
-			.run(s.key, s.source, s.sessionId, n(s.title), n(s.cwd), n(s.repository), n(s.branch), n(s.client), n(s.product), n(s.workspaceUri),
-				n(s.createdAt), n(s.updatedAt), s.repositoryInferred ? 1 : 0, s.workspaceless ? 1 : 0);
+				repo_inferred = excluded.repo_inferred, workspaceless = excluded.workspaceless`).run(
+			s.key,
+			s.source,
+			s.sessionId,
+			n(s.title),
+			n(s.cwd),
+			n(s.repository),
+			n(s.branch),
+			n(s.client),
+			n(s.product),
+			n(s.workspaceUri),
+			n(s.createdAt),
+			n(s.updatedAt),
+			s.repositoryInferred ? 1 : 0,
+			s.workspaceless ? 1 : 0,
+		);
 	}
 
 	deleteSession(key: string): number {
@@ -208,9 +231,19 @@ export class Store {
 		return Number(removed);
 	}
 
-	replaceAgentHostLinks(links: { sdkSessionId: string; agentHostSessionId: string; product: string; chatId?: string; title?: string }[]): void {
+	replaceAgentHostLinks(
+		links: readonly {
+			sdkSessionId: string;
+			agentHostSessionId: string;
+			product: string;
+			chatId?: string;
+			title?: string;
+		}[],
+	): void {
 		this.stmt('DELETE FROM agent_host_links').run();
-		const ins = this.stmt('INSERT OR REPLACE INTO agent_host_links(sdk_session_id, agent_host_session_id, product, chat_id, title) VALUES (?, ?, ?, ?, ?)');
+		const ins = this.stmt(
+			'INSERT OR REPLACE INTO agent_host_links(sdk_session_id, agent_host_session_id, product, chat_id, title) VALUES (?, ?, ?, ?, ?)',
+		);
 		for (const l of links) {
 			ins.run(l.sdkSessionId, l.agentHostSessionId, l.product, n(l.chatId), n(l.title));
 		}
@@ -220,12 +253,23 @@ export class Store {
 
 	/** Inserts prompts (ignoring already-known ids) and their chunks. Returns the number inserted. */
 	insertPrompts(prompts: readonly PromptRecord[], chunker: (text: string) => Chunk[]): number {
-		const ins = this.stmt(`INSERT INTO prompts(id, session_key, text, hash, ts, origin, seq, model, is_ack) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		const ins =
+			this.stmt(`INSERT INTO prompts(id, session_key, text, hash, ts, origin, seq, model, is_ack) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO NOTHING`);
 		const insChunk = this.stmt('INSERT INTO chunks(prompt_rowid, ord, start, "end", hash) VALUES (?, ?, ?, ?, ?)');
 		let count = 0;
 		for (const p of prompts) {
-			const r = ins.run(p.id, p.sessionKey, p.text, hashText(p.text), p.timestamp, p.origin, p.seq, n(p.model), isAckText(p.text) ? 1 : 0);
+			const r = ins.run(
+				p.id,
+				p.sessionKey,
+				p.text,
+				hashText(p.text),
+				p.timestamp,
+				p.origin,
+				p.seq,
+				n(p.model),
+				isAckText(p.text) ? 1 : 0,
+			);
 			if (r.changes === 0) {
 				continue;
 			}
@@ -239,14 +283,29 @@ export class Store {
 	}
 
 	/** Replaces all prompts of a session (used for full re-reads). Returns [added, removed]. */
-	replaceSessionPrompts(sessionKey: string, prompts: readonly PromptRecord[], chunker: (text: string) => Chunk[]): [number, number] {
-		const existing = new Map((this.stmt('SELECT id, hash, ts, seq, origin FROM prompts WHERE session_key = ?').all(sessionKey) as Row[])
-			.map(r => [String(r['id']), r]));
+	replaceSessionPrompts(
+		sessionKey: string,
+		prompts: readonly PromptRecord[],
+		chunker: (text: string) => Chunk[],
+	): [number, number] {
+		const existing = new Map(
+			(
+				this.stmt('SELECT id, hash, ts, seq, origin FROM prompts WHERE session_key = ?').all(
+					sessionKey,
+				) as Row[]
+			).map(r => [String(r.id), r]),
+		);
 		const keep = new Set<string>();
 		const changed: PromptRecord[] = [];
 		for (const p of prompts) {
 			const e = existing.get(p.id);
-			if (e && e['hash'] === hashText(p.text) && Number(e['ts']) === p.timestamp && Number(e['seq']) === p.seq && e['origin'] === p.origin) {
+			if (
+				e &&
+				e.hash === hashText(p.text) &&
+				Number(e.ts) === p.timestamp &&
+				Number(e.seq) === p.seq &&
+				e.origin === p.origin
+			) {
 				keep.add(p.id);
 			} else {
 				changed.push(p);
@@ -281,22 +340,37 @@ export class Store {
 	}
 
 	getSessionPrompts(sessionKey: string): StoredPrompt[] {
-		return (this.stmt('SELECT * FROM prompts WHERE session_key = ? ORDER BY seq').all(sessionKey) as Row[]).map(rowToPrompt);
+		return (this.stmt('SELECT * FROM prompts WHERE session_key = ? ORDER BY seq').all(sessionKey) as Row[]).map(
+			rowToPrompt,
+		);
 	}
 
 	/** All prompt rows with filterable metadata, for in-memory filtering/ranking. */
 	listPromptMeta(): PromptMeta[] {
-		return (this.stmt('SELECT rowid, id, hash, ts, origin, session_key, is_ack, model, seq, length(text) AS len FROM prompts').all() as Row[]).map(r => ({
-			rowid: Number(r['rowid']), id: String(r['id']), hash: String(r['hash']), ts: Number(r['ts']), origin: r['origin'] as PromptOrigin,
-			sessionKey: String(r['session_key']), isAck: Number(r['is_ack']) === 1, model: opt<string>(r['model']),
-			seq: Number(r['seq']), length: Number(r['len']),
+		return (
+			this.stmt(
+				'SELECT rowid, id, hash, ts, origin, session_key, is_ack, model, seq, length(text) AS len FROM prompts',
+			).all() as Row[]
+		).map(r => ({
+			rowid: Number(r.rowid),
+			id: String(r.id),
+			hash: String(r.hash),
+			ts: Number(r.ts),
+			origin: r.origin as PromptOrigin,
+			sessionKey: String(r.session_key),
+			isAck: Number(r.is_ack) === 1,
+			model: opt<string>(r.model),
+			seq: Number(r.seq),
+			length: Number(r.len),
 		}));
 	}
 
 	/** First `chars` characters of every prompt, streamed. */
 	*iterateTexts(chars: number): Generator<string> {
-		for (const r of this.db.prepare('SELECT substr(text, 1, ?) AS t FROM prompts').iterate(chars) as Iterable<Row>) {
-			yield String(r['t']);
+		for (const r of this.db
+			.prepare('SELECT substr(text, 1, ?) AS t FROM prompts')
+			.iterate(chars) as Iterable<Row>) {
+			yield String(r.t);
 		}
 	}
 
@@ -307,7 +381,7 @@ export class Store {
 		for (const id of rowids) {
 			const r = s.get(chars, id) as Row | undefined;
 			if (r) {
-				out.set(id, String(r['p']));
+				out.set(id, String(r.p));
 			}
 		}
 		return out;
@@ -320,8 +394,11 @@ export class Store {
 	/** BM25 full-text search over all prompts. Returns rowids best-first. Malformed expressions yield no hits. */
 	searchFts(match: string): { rowid: number; score: number }[] {
 		try {
-			return (this.stmt('SELECT rowid, -bm25(prompts_fts) AS score FROM prompts_fts WHERE prompts_fts MATCH ? ORDER BY bm25(prompts_fts)')
-				.all(match) as Row[]).map(r => ({ rowid: Number(r['rowid']), score: Number(r['score']) }));
+			return (
+				this.stmt(
+					'SELECT rowid, -bm25(prompts_fts) AS score FROM prompts_fts WHERE prompts_fts MATCH ? ORDER BY bm25(prompts_fts)',
+				).all(match) as Row[]
+			).map(r => ({ rowid: Number(r.rowid), score: Number(r.score) }));
 		} catch {
 			return [];
 		}
@@ -333,19 +410,26 @@ export class Store {
 	pendingChunks(model: string, origins: readonly PromptOrigin[], limit: number): PendingChunk[] {
 		const placeholders = origins.map(() => '?').join(',');
 		// Slice in JS: offsets are UTF-16 code units, while SQLite substr() counts code points.
-		const rows = this.db.prepare(`SELECT c.hash AS hash, p.text AS text, c.start AS s, c."end" AS e
+		const rows = this.db
+			.prepare(`SELECT c.hash AS hash, p.text AS text, c.start AS s, c."end" AS e
 			FROM chunks c JOIN prompts p ON p.rowid = c.prompt_rowid
 			LEFT JOIN embeddings e ON e.model = ? AND e.hash = c.hash
 			WHERE e.hash IS NULL AND p.origin IN (${placeholders})
-			GROUP BY c.hash ORDER BY MAX(p.ts) DESC LIMIT ?`).all(model, ...origins, limit) as Row[];
-		return rows.map(r => ({ hash: String(r['hash']), text: String(r['text']).slice(Number(r['s']), Number(r['e'])) }));
+			GROUP BY c.hash ORDER BY MAX(p.ts) DESC LIMIT ?`)
+			.all(model, ...origins, limit) as Row[];
+		return rows.map(r => ({
+			hash: String(r.hash),
+			text: String(r.text).slice(Number(r.s), Number(r.e)),
+		}));
 	}
 
 	countPendingChunks(model: string, origins: readonly PromptOrigin[]): number {
 		const placeholders = origins.map(() => '?').join(',');
-		const r = this.db.prepare(`SELECT COUNT(DISTINCT c.hash) AS n FROM chunks c JOIN prompts p ON p.rowid = c.prompt_rowid
-			LEFT JOIN embeddings e ON e.model = ? AND e.hash = c.hash WHERE e.hash IS NULL AND p.origin IN (${placeholders})`).get(model, ...origins) as Row;
-		return Number(r['n']);
+		const r = this.db
+			.prepare(`SELECT COUNT(DISTINCT c.hash) AS n FROM chunks c JOIN prompts p ON p.rowid = c.prompt_rowid
+			LEFT JOIN embeddings e ON e.model = ? AND e.hash = c.hash WHERE e.hash IS NULL AND p.origin IN (${placeholders})`)
+			.get(model, ...origins) as Row;
+		return Number(r.n);
 	}
 
 	saveEmbeddings(model: string, items: readonly { hash: string; vector: Float32Array }[]): void {
@@ -356,7 +440,8 @@ export class Store {
 	}
 
 	loadVectorMatrix(model: string, dims: number): VectorMatrix {
-		const rows = this.stmt(`SELECT c.prompt_rowid AS pr, c.ord AS o, c.start AS s, c."end" AS e, em.vec AS vec FROM chunks c
+		const rows =
+			this.stmt(`SELECT c.prompt_rowid AS pr, c.ord AS o, c.start AS s, c."end" AS e, em.vec AS vec FROM chunks c
 			JOIN embeddings em ON em.model = ? AND em.hash = c.hash`).all(model) as Row[];
 		const count = rows.length;
 		const vectors = new Float32Array(count * dims);
@@ -366,26 +451,37 @@ export class Store {
 		const ends = new Int32Array(count);
 		let i = 0;
 		for (const r of rows) {
-			const blob = r['vec'] as Uint8Array;
+			const blob = r.vec as Uint8Array;
 			if (blob.byteLength !== dims * 4) {
 				continue;
 			}
-			vectors.set(new Float32Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength)), i * dims);
-			promptRowids[i] = Number(r['pr']);
-			ords[i] = Number(r['o']);
-			starts[i] = Number(r['s']);
-			ends[i] = Number(r['e']);
+			vectors.set(
+				new Float32Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength)),
+				i * dims,
+			);
+			promptRowids[i] = Number(r.pr);
+			ords[i] = Number(r.o);
+			starts[i] = Number(r.s);
+			ends[i] = Number(r.e);
 			i++;
 		}
 		return {
-			dims, count: i, vectors: vectors.subarray(0, i * dims), promptRowids: promptRowids.subarray(0, i),
-			ords: ords.subarray(0, i), starts: starts.subarray(0, i), ends: ends.subarray(0, i),
+			dims,
+			count: i,
+			vectors: vectors.subarray(0, i * dims),
+			promptRowids: promptRowids.subarray(0, i),
+			ords: ords.subarray(0, i),
+			starts: starts.subarray(0, i),
+			ends: ends.subarray(0, i),
 		};
 	}
 
 	/** Removes embeddings of this model that no chunk references any more (deleted/edited prompts). Other models' vectors are kept so switching back is free. */
 	gcEmbeddings(model: string): number {
-		return Number(this.stmt('DELETE FROM embeddings WHERE model = ? AND hash NOT IN (SELECT hash FROM chunks)').run(model).changes);
+		return Number(
+			this.stmt('DELETE FROM embeddings WHERE model = ? AND hash NOT IN (SELECT hash FROM chunks)').run(model)
+				.changes,
+		);
 	}
 
 	deleteEmbeddings(model: string): number {
@@ -394,21 +490,35 @@ export class Store {
 
 	// ---- stats ----------------------------------------------------------------------------------
 
-	counts(model: string | undefined): { sessions: number; prompts: number; chunks: number; embedded: number; byOrigin: Record<string, number>; bySource: Record<string, number> } {
-		const one = (sql: string, ...args: (string | number)[]) => Number((this.db.prepare(sql).get(...args) as Row)['n']);
+	counts(model: string | undefined): {
+		sessions: number;
+		prompts: number;
+		chunks: number;
+		embedded: number;
+		byOrigin: Record<string, number>;
+		bySource: Record<string, number>;
+	} {
+		const one = (sql: string, ...args: (string | number)[]) => Number((this.db.prepare(sql).get(...args) as Row).n);
 		const byOrigin: Record<string, number> = {};
 		for (const r of this.stmt('SELECT origin, COUNT(*) AS n FROM prompts GROUP BY origin').all() as Row[]) {
-			byOrigin[String(r['origin'])] = Number(r['n']);
+			byOrigin[String(r.origin)] = Number(r.n);
 		}
 		const bySource: Record<string, number> = {};
-		for (const r of this.stmt('SELECT s.source AS source, COUNT(*) AS n FROM prompts p JOIN sessions s ON s.key = p.session_key GROUP BY s.source').all() as Row[]) {
-			bySource[String(r['source'])] = Number(r['n']);
+		for (const r of this.stmt(
+			'SELECT s.source AS source, COUNT(*) AS n FROM prompts p JOIN sessions s ON s.key = p.session_key GROUP BY s.source',
+		).all() as Row[]) {
+			bySource[String(r.source)] = Number(r.n);
 		}
 		return {
 			sessions: one('SELECT COUNT(*) AS n FROM sessions WHERE key IN (SELECT DISTINCT session_key FROM prompts)'),
 			prompts: one('SELECT COUNT(*) AS n FROM prompts'),
 			chunks: one('SELECT COUNT(DISTINCT hash) AS n FROM chunks'),
-			embedded: model ? one('SELECT COUNT(*) AS n FROM embeddings WHERE model = ? AND hash IN (SELECT hash FROM chunks)', model) : 0,
+			embedded: model
+				? one(
+						'SELECT COUNT(*) AS n FROM embeddings WHERE model = ? AND hash IN (SELECT hash FROM chunks)',
+						model,
+					)
+				: 0,
 			byOrigin,
 			bySource,
 		};
@@ -435,40 +545,40 @@ function isOwnerAlive(owner: string): boolean {
 }
 
 function opt<T>(v: unknown): T | undefined {
-	return v === null || v === undefined ? undefined : v as T;
+	return v === null || v === undefined ? undefined : (v as T);
 }
 
 function rowToPrompt(r: Row): StoredPrompt {
 	return {
-		rowid: Number(r['rowid']),
-		id: String(r['id']),
-		sessionKey: String(r['session_key']),
-		text: String(r['text']),
-		hash: String(r['hash']),
-		timestamp: Number(r['ts']),
-		origin: r['origin'] as PromptOrigin,
-		seq: Number(r['seq']),
-		model: opt<string>(r['model']),
+		rowid: Number(r.rowid),
+		id: String(r.id),
+		sessionKey: String(r.session_key),
+		text: String(r.text),
+		hash: String(r.hash),
+		timestamp: Number(r.ts),
+		origin: r.origin as PromptOrigin,
+		seq: Number(r.seq),
+		model: opt<string>(r.model),
 	};
 }
 
 function rowToSession(r: Row): SessionInfo {
 	return {
-		key: String(r['key']),
-		source: r['source'] as SourceKind,
-		sessionId: String(r['session_id']),
-		title: opt<string>(r['title']),
-		cwd: opt<string>(r['cwd']),
-		repository: opt<string>(r['repository']),
-		repositoryInferred: Number(r['repo_inferred']) === 1 || undefined,
-		workspaceless: Number(r['workspaceless']) === 1 || undefined,
-		branch: opt<string>(r['branch']),
-		client: opt<string>(r['client']),
-		product: opt<string>(r['product']) ?? opt<string>(r['agent_host_product']),
-		workspaceUri: opt<string>(r['workspace_uri']),
-		agentHostSessionId: opt<string>(r['agent_host_session_id']),
-		agentHostChatId: opt<string>(r['agent_host_chat_id']),
-		createdAt: opt<number>(r['created_at']),
-		updatedAt: opt<number>(r['updated_at']),
+		key: String(r.key),
+		source: r.source as SourceKind,
+		sessionId: String(r.session_id),
+		title: opt<string>(r.title),
+		cwd: opt<string>(r.cwd),
+		repository: opt<string>(r.repository),
+		repositoryInferred: Number(r.repo_inferred) === 1 || undefined,
+		workspaceless: Number(r.workspaceless) === 1 || undefined,
+		branch: opt<string>(r.branch),
+		client: opt<string>(r.client),
+		product: opt<string>(r.product) ?? opt<string>(r.agent_host_product),
+		workspaceUri: opt<string>(r.workspace_uri),
+		agentHostSessionId: opt<string>(r.agent_host_session_id),
+		agentHostChatId: opt<string>(r.agent_host_chat_id),
+		createdAt: opt<number>(r.created_at),
+		updatedAt: opt<number>(r.updated_at),
 	};
 }

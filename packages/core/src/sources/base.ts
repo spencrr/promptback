@@ -5,21 +5,33 @@ import type { ClientInfo, PromptRecord, SessionInfo, SessionOpenTarget } from '.
 
 /** The slice of the index a source may touch. Sources only ever read their inputs; this is where they write. */
 export interface SourceStore {
+	// biome-ignore-start lint/style/useConsistentMethodSignatures: generic methods must stay methods for Store to implement this structurally.
 	transaction<T>(fn: () => T): T;
 	/** Every saved read cursor of one kind (one query per sync). */
 	loadFileStates<T>(kind: string): Map<string, T>;
-	setFileState(file: string, kind: string, state: unknown): void;
-	deleteFile(file: string): void;
-	upsertSession(session: SessionInfo): void;
+	// biome-ignore-end lint/style/useConsistentMethodSignatures: generic methods must stay methods for Store to implement this structurally.
+	setFileState: (file: string, kind: string, state: unknown) => void;
+	deleteFile: (file: string) => void;
+	upsertSession: (session: SessionInfo) => void;
 	/** Removes a session and its prompts; returns how many prompts went. */
-	deleteSession(key: string): number;
+	deleteSession: (key: string) => number;
 	/** Inserts prompts whose ids are new; returns how many were inserted. */
-	insertPrompts(prompts: readonly PromptRecord[], chunker: (text: string) => Chunk[]): number;
+	insertPrompts: (prompts: readonly PromptRecord[], chunker: (text: string) => Chunk[]) => number;
 	/** Makes a session's prompts exactly `prompts`; returns [added, removed]. */
-	replaceSessionPrompts(sessionKey: string, prompts: readonly PromptRecord[], chunker: (text: string) => Chunk[]): [number, number];
-	replaceAgentHostLinks(
-		links: readonly { sdkSessionId: string; agentHostSessionId: string; product: string; chatId?: string; title?: string }[],
-	): void;
+	replaceSessionPrompts: (
+		sessionKey: string,
+		prompts: readonly PromptRecord[],
+		chunker: (text: string) => Chunk[],
+	) => [number, number];
+	replaceAgentHostLinks: (
+		links: readonly {
+			sdkSessionId: string;
+			agentHostSessionId: string;
+			product: string;
+			chatId?: string;
+			title?: string;
+		}[],
+	) => void;
 }
 
 /** What the engine hands a source for one sync. */
@@ -56,9 +68,10 @@ export interface PromptSourcePlugin<O = unknown> extends ConfigurablePlugin<O> {
 	readonly aliases: readonly string[];
 	/** The clients whose sessions this source reads ({@link SessionInfo.client} values). */
 	readonly clients: readonly ClientInfo[];
+	// biome-ignore lint/style/useConsistentMethodSignatures: a method signature is bivariant in O, so plugins with specific option types fit one registry.
 	sync(options: O, ctx: SourceContext): Promise<SourceSyncResult>;
 	/** Ways to reopen a session this source read, best first. */
-	openTargets?(session: SessionInfo): SessionOpenTarget[];
+	openTargets?: (session: SessionInfo) => SessionOpenTarget[];
 }
 
 /** Options every source has; plugins extend this schema. */

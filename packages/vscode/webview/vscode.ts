@@ -1,5 +1,5 @@
 /** The VS Code webview bridge, persisted state, and a "latest request wins" helper. */
-import { useRef } from 'preact/hooks';
+import { useMemo, useRef } from 'preact/hooks';
 import type { FromWebview } from '../src/explorer/messages.js';
 import type { ViewState } from './model.js';
 
@@ -13,21 +13,32 @@ export interface Persisted {
 	widths: Record<ColumnKey, number>;
 }
 
-declare function acquireVsCodeApi(): { postMessage(m: FromWebview): void; getState(): Persisted | undefined; setState(s: Persisted): void };
+declare function acquireVsCodeApi(): {
+	postMessage: (m: FromWebview) => void;
+	getState: () => Persisted | undefined;
+	setState: (s: Persisted) => void;
+};
 
 export const vscode = acquireVsCodeApi();
 export const post = (m: FromWebview) => vscode.postMessage(m);
 
 /** Request ids per channel; responses for anything but the latest request are ignored. */
-export function useLatest() {
+export function useLatest(): {
+	begin: (channel: string) => number;
+	isLatest: (channel: string, id: number) => boolean;
+} {
 	const next = useRef(1);
 	const latest = useRef<Record<string, number>>({});
-	return {
-		begin(channel: string): number {
-			const id = next.current++;
-			latest.current[channel] = id;
-			return id;
-		},
-		isLatest: (channel: string, id: number) => latest.current[channel] === id,
-	};
+	// One stable object, so hooks can list it as a dependency without re-running every render.
+	return useMemo(
+		() => ({
+			begin(channel: string): number {
+				const id = next.current++;
+				latest.current[channel] = id;
+				return id;
+			},
+			isLatest: (channel: string, id: number) => latest.current[channel] === id,
+		}),
+		[],
+	);
 }

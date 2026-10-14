@@ -1,16 +1,16 @@
-import * as vscode from 'vscode';
 import {
 	type EmbeddingConfig,
 	type HostInitOptions,
 	type IndexStatus,
 	type PromptOrigin,
+	promptSources,
 	type RecentSession,
 	type SearchQuery,
 	type SearchResult,
 	type SyncResult,
-	promptSources,
 } from '@promptback/core';
-import { PREVIEW_SCHEME, PromptPreviewProvider, copyPrompt, openSession } from './actions.js';
+import * as vscode from 'vscode';
+import { copyPrompt, openSession, PREVIEW_SCHEME, PromptPreviewProvider } from './actions.js';
 import { ExplorerProvider, openExplorer } from './explorer/explorerProvider.js';
 import { HostClient } from './hostClient.js';
 import { registerMcpServer } from './mcpProvider.js';
@@ -21,10 +21,10 @@ const EXTENSION_ID = 'spencrr.promptback-vscode';
 
 /** Returned from `activate` for other extensions and integration tests. */
 export interface PromptbackApi {
-	search(query: SearchQuery | string): Promise<SearchResult>;
-	status(): Promise<IndexStatus & { syncing: boolean }>;
-	sync(): Promise<SyncResult>;
-	recentSessions(): Promise<RecentSession[]>;
+	search: (query: SearchQuery | string) => Promise<SearchResult>;
+	status: () => Promise<IndexStatus & { syncing: boolean }>;
+	sync: () => Promise<SyncResult>;
+	recentSessions: () => Promise<RecentSession[]>;
 }
 
 export function activate(context: vscode.ExtensionContext): PromptbackApi {
@@ -32,20 +32,27 @@ export function activate(context: vscode.ExtensionContext): PromptbackApi {
 	const host = new HostClient(context.asAbsolutePath('dist/host.js'), log);
 	context.subscriptions.push(log, host);
 
-	const start = () => host.start(buildOptions(context)).then(
-		r => log.info(`Index: ${r.indexDir}`),
-		e => log.error(`Failed to start index process: ${e instanceof Error ? e.message : e}`),
-	);
+	const start = () =>
+		host.start(buildOptions(context)).then(
+			r => log.info(`Index: ${r.indexDir}`),
+			e => log.error(`Failed to start index process: ${e instanceof Error ? e.message : e}`),
+		);
 	let started = start();
-	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
-		if (['promptback.embedding', 'promptback.index', 'promptback.sources'].some(s => e.affectsConfiguration(s))) {
-			log.info('Settings changed; restarting index process');
-			started = start();
-		}
-	}));
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration(e => {
+			if (
+				['promptback.embedding', 'promptback.index', 'promptback.sources'].some(s => e.affectsConfiguration(s))
+			) {
+				log.info('Settings changed; restarting index process');
+				started = start();
+			}
+		}),
+	);
 
 	const explorer = ExplorerProvider.register(context, host);
-	context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(PREVIEW_SCHEME, new PromptPreviewProvider(host)));
+	context.subscriptions.push(
+		vscode.workspace.registerTextDocumentContentProvider(PREVIEW_SCHEME, new PromptPreviewProvider(host)),
+	);
 	registerStatusItem(context, host, log);
 	registerSidebar(context, host, explorer);
 	registerCommands(context, host, log, explorer);
@@ -56,10 +63,22 @@ export function activate(context: vscode.ExtensionContext): PromptbackApi {
 		await started;
 	};
 	return {
-		search: async q => (await ready(), host.request('search', typeof q === 'string' ? { text: q } : q)),
-		status: async () => (await ready(), host.request('status', undefined as never)),
-		sync: async () => (await ready(), host.request('sync', { embed: true })),
-		recentSessions: async () => (await ready(), host.request('recentSessions', { limit: 20 })),
+		search: async q => {
+			await ready();
+			return host.request('search', typeof q === 'string' ? { text: q } : q);
+		},
+		status: async () => {
+			await ready();
+			return host.request('status', undefined as never);
+		},
+		sync: async () => {
+			await ready();
+			return host.request('sync', { embed: true });
+		},
+		recentSessions: async () => {
+			await ready();
+			return host.request('recentSessions', { limit: 20 });
+		},
 	};
 }
 
@@ -79,7 +98,8 @@ function registerStatusItem(context: vscode.ExtensionContext, host: HostClient, 
 		host.onProgress(p => {
 			if (p.phase === 'embed' && p.total && p.total >= 20) {
 				item.text = `$(sync~spin) Prompts ${p.done ?? 0}/${p.total}`;
-				item.tooltip = 'Indexing prompt history for semantic search (locally, in the background). Keyword search already works.';
+				item.tooltip =
+					'Indexing prompt history for semantic search (locally, in the background). Keyword search already works.';
 				item.command = 'promptback.showStatus';
 			} else if (p.phase === 'embed' && p.message.startsWith('Downloading')) {
 				item.text = '$(cloud-download) Prompts: downloading model';
@@ -88,14 +108,29 @@ function registerStatusItem(context: vscode.ExtensionContext, host: HostClient, 
 		}),
 		host.onSynced(r => {
 			idle();
-			r.errors.slice(0, 20).forEach(e => log.warn(e));
+			for (const e of r.errors.slice(0, 20)) {
+				log.warn(e);
+			}
 			if (r.embeddedChunks > 0 || r.addedPrompts > 0) {
-				log.info(`Sync: +${r.addedPrompts}/-${r.removedPrompts} prompts, ${r.embeddedChunks} chunks embedded in ${(r.tookMs / 1000).toFixed(1)} s`);
+				log.info(
+					`Sync: +${r.addedPrompts}/-${r.removedPrompts} prompts, ${r.embeddedChunks} chunks embedded in ${(r.tookMs / 1000).toFixed(1)} s`,
+				);
 			}
 			if (r.leader && r.embeddedChunks > 0 && !context.globalState.get('promptback.welcomed')) {
 				void context.globalState.update('promptback.welcomed', true);
-				void vscode.window.showInformationMessage('Your prompt history is indexed for semantic search.', 'Open Prompt Explorer', 'Quick Search')
-					.then(c => c && vscode.commands.executeCommand(c === 'Quick Search' ? 'promptback.search' : 'promptback.openExplorer'));
+				void vscode.window
+					.showInformationMessage(
+						'Your prompt history is indexed for semantic search.',
+						'Open Prompt Explorer',
+						'Quick Search',
+					)
+					.then(
+						c =>
+							c &&
+							vscode.commands.executeCommand(
+								c === 'Quick Search' ? 'promptback.search' : 'promptback.openExplorer',
+							),
+					);
 			}
 		}),
 	);
@@ -127,7 +162,11 @@ function registerSidebar(context: vscode.ExtensionContext, host: HostClient, exp
 		}),
 		vscode.commands.registerCommand('promptback.revealPrompt', (node: SessionNode) => {
 			if (node.kind === 'prompt') {
-				return openExplorer(explorer, { query: `session:${node.session.session.sessionId}`, view: 'table', selectId: node.prompt.id });
+				return openExplorer(explorer, {
+					query: `session:${node.session.session.sessionId}`,
+					view: 'table',
+					selectId: node.prompt.id,
+				});
 			}
 			if (node.kind === 'session') {
 				return openExplorer(explorer, { query: `session:${node.item.session.sessionId}`, view: 'table' });
@@ -142,42 +181,63 @@ function registerSidebar(context: vscode.ExtensionContext, host: HostClient, exp
 			}
 		}),
 		vscode.commands.registerCommand('promptback.openSessionFromTree', (node: SessionNode) => {
-			const s = node.kind === 'session' ? node.item.session : node.kind === 'prompt' ? node.session.session : undefined;
-			return s ? openSession(s) : undefined;
+			if (node.kind === 'session') {
+				return openSession(node.item.session);
+			}
+			return node.kind === 'prompt' ? openSession(node.session.session) : undefined;
 		}),
 	);
 }
 
-function registerCommands(context: vscode.ExtensionContext, host: HostClient, log: vscode.LogOutputChannel, explorer: ExplorerProvider): void {
-	const command = (id: string, fn: (...args: any[]) => unknown) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
+function registerCommands(
+	context: vscode.ExtensionContext,
+	host: HostClient,
+	log: vscode.LogOutputChannel,
+	explorer: ExplorerProvider,
+): void {
+	const command = (id: string, fn: (...args: never[]) => unknown) =>
+		context.subscriptions.push(vscode.commands.registerCommand(id, fn));
 
-	command('promptback.search', (query?: unknown) => showSearchPicker(host, {
-		initialQuery: typeof query === 'string' ? query : undefined,
-		onOpenExplorer: q => openExplorer(explorer, { query: q }),
-	}));
-	command('promptback.searchAll', () => showSearchPicker(host, { includeAllOrigins: true, onOpenExplorer: q => openExplorer(explorer, { query: q }) }));
-	command('promptback.openExplorer', (query?: unknown, view?: unknown) => openExplorer(explorer, {
-		query: typeof query === 'string' ? query : undefined,
-		view: view === 'graph' || view === 'table' ? view : undefined,
-	}));
+	command('promptback.search', (query?: unknown) =>
+		showSearchPicker(host, {
+			initialQuery: typeof query === 'string' ? query : undefined,
+			onOpenExplorer: q => openExplorer(explorer, { query: q }),
+		}),
+	);
+	command('promptback.searchAll', () =>
+		showSearchPicker(host, { includeAllOrigins: true, onOpenExplorer: q => openExplorer(explorer, { query: q }) }),
+	);
+	command('promptback.openExplorer', (query?: unknown, view?: unknown) =>
+		openExplorer(explorer, {
+			query: typeof query === 'string' ? query : undefined,
+			view: view === 'graph' || view === 'table' ? view : undefined,
+		}),
+	);
 	command('promptback.openIndexPanel', () => openExplorer(explorer, { panel: 'index' }));
-	command('promptback.reindex', () => vscode.window.withProgress(
-		{ location: vscode.ProgressLocation.Notification, title: 'Promptback' },
-		async progress => {
-			const sub = host.onProgress(p => progress.report({ message: p.message }));
-			try {
-				const r = await host.request('sync', { embed: true });
-				void vscode.window.showInformationMessage(r.leader
-					? `Prompt index updated: +${r.addedPrompts} / -${r.removedPrompts} prompts, ${r.embeddedChunks} chunks embedded.`
-					: 'Another VS Code window is updating the shared prompt index; results will appear shortly.');
-			} finally {
-				sub.dispose();
-			}
-		},
-	));
+	command('promptback.reindex', () =>
+		vscode.window.withProgress(
+			{ location: vscode.ProgressLocation.Notification, title: 'Promptback' },
+			async progress => {
+				const sub = host.onProgress(p => progress.report({ message: p.message }));
+				try {
+					const r = await host.request('sync', { embed: true });
+					void vscode.window.showInformationMessage(
+						r.leader
+							? `Prompt index updated: +${r.addedPrompts} / -${r.removedPrompts} prompts, ${r.embeddedChunks} chunks embedded.`
+							: 'Another VS Code window is updating the shared prompt index; results will appear shortly.',
+					);
+				} finally {
+					sub.dispose();
+				}
+			},
+		),
+	);
 	command('promptback.showStatus', async () => {
 		const s = await host.request('status', undefined as never);
-		const list = (o: Readonly<Record<string, number>>) => Object.entries(o).map(([k, v]) => `${k} ${v}`).join(', ');
+		const list = (o: Readonly<Record<string, number>>) =>
+			Object.entries(o)
+				.map(([k, v]) => `${k} ${v}`)
+				.join(', ');
 		const detail = [
 			`${s.prompts.toLocaleString()} prompts in ${s.sessions.toLocaleString()} sessions (${list(s.promptsByOrigin)})`,
 			`Sources: ${list(s.promptsBySource)}`,
@@ -198,7 +258,9 @@ async function enableInAgentsWindow(): Promise<void> {
 	const cfg = vscode.workspace.getConfiguration('extensions');
 	const current = cfg.get<Record<string, boolean>>('supportAgentsWindow') ?? {};
 	await cfg.update('supportAgentsWindow', { ...current, [EXTENSION_ID]: true }, vscode.ConfigurationTarget.Global);
-	void vscode.window.showInformationMessage('Promptback is now allowed in the Agents window (experimental). Reload the Agents window to use it there.');
+	void vscode.window.showInformationMessage(
+		'Promptback is now allowed in the Agents window (experimental). Reload the Agents window to use it there.',
+	);
 }
 
 /**
@@ -209,14 +271,17 @@ async function offerAgentsWindow(context: vscode.ExtensionContext): Promise<void
 	if (context.globalState.get('promptback.agentsWindowOffered')) {
 		return;
 	}
-	const allowed = vscode.workspace.getConfiguration('extensions').get<Record<string, boolean>>('supportAgentsWindow')?.[EXTENSION_ID];
+	const allowed = vscode.workspace
+		.getConfiguration('extensions')
+		.get<Record<string, boolean>>('supportAgentsWindow')?.[EXTENSION_ID];
 	if (allowed) {
 		return;
 	}
 	await context.globalState.update('promptback.agentsWindowOffered', true);
 	const choice = await vscode.window.showInformationMessage(
 		'Use Promptback inside the Agents window too? (Experimental: adds this extension to "extensions.supportAgentsWindow".)',
-		'Enable', 'Not now',
+		'Enable',
+		'Not now',
 	);
 	if (choice === 'Enable') {
 		await enableInAgentsWindow();
@@ -268,7 +333,7 @@ function sourceOptionsFromSettings(c: vscode.WorkspaceConfiguration): Record<str
 		const options: Record<string, unknown> = { enabled: c.get<boolean>(`sources.${key}`, true) };
 		const home = c.get<string>(`sources.${key}Home`);
 		if (home) {
-			options['home'] = home;
+			options.home = home;
 		}
 		out[source.id] = options;
 	}
@@ -278,4 +343,3 @@ function sourceOptionsFromSettings(c: vscode.WorkspaceConfiguration): Record<str
 export function deactivate(): void {
 	// HostClient is disposed via context.subscriptions (disconnects the child process).
 }
-

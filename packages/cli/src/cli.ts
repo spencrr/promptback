@@ -20,7 +20,8 @@ declare const __PROMPTBACK_VERSION__: string | undefined;
 const VERSION =
 	typeof __PROMPTBACK_VERSION__ === 'string'
 		? __PROMPTBACK_VERSION__
-		: (JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+		: (JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string })
+				.version;
 
 const HELP = `promptback ${VERSION} — semantic search over every prompt you've sent to your AI coding agents
 
@@ -83,7 +84,10 @@ async function main(): Promise<void> {
 
 	const embedding: EmbeddingConfig = values['no-model'] ? { kind: 'none' } : { kind: 'local', model: values.model };
 	if (cmd === 'mcp') {
-		await serveMcp({ indexDir: values['index-dir'], embedding, allowModelDownload: !values['no-download'] }, VERSION);
+		await serveMcp(
+			{ indexDir: values['index-dir'], embedding, allowModelDownload: !values['no-download'] },
+			VERSION,
+		);
 		return;
 	}
 	const opts: EngineOptions = {
@@ -173,7 +177,9 @@ async function runSearch(engine: PromptSearchEngine, text: string, values: Flags
 	if (res.semanticUnavailable) {
 		console.error('(semantic search unavailable — showing keyword matches; run `promptback index`)');
 	}
-	res.hits.forEach((h, i) => printHit(h, i + 1));
+	for (const [i, h] of res.hits.entries()) {
+		printHit(h, i + 1);
+	}
 	console.error(`${res.hits.length} hits in ${res.tookMs} ms`);
 }
 
@@ -202,9 +208,12 @@ function printSources(engine: PromptSearchEngine, json: boolean): void {
 	}
 	for (const r of rows) {
 		const plugin = promptSources.get(r.id);
-		const state = r.error ? `INVALID (${r.error})` : r.enabled ? 'on ' : 'off';
+		let state = r.enabled ? 'on ' : 'off';
+		if (r.error) {
+			state = `INVALID (${r.error})`;
+		}
 		const { enabled: _enabled, ...rest } = (r.options ?? {}) as Record<string, unknown>;
-		const extra = Object.keys(rest).length ? `  ${JSON.stringify(rest)}` : '';
+		const extra = Object.keys(rest).length > 0 ? `  ${JSON.stringify(rest)}` : '';
 		console.log(`${state}  ${r.id.padEnd(12)} ${plugin?.label ?? ''}${extra}`);
 	}
 }
@@ -214,12 +223,19 @@ function printHit(h: SearchHit, n: number): void {
 	const when = new Date(h.prompt.timestamp).toISOString().slice(0, 10);
 	const firstLine = h.prompt.text.trim().split(/\r?\n/, 1)[0]!.slice(0, 110);
 	const where = [s.repository ?? s.cwd, s.client, when].filter(Boolean).join(' · ');
-	const ranks = [h.lexicalRank ? `L${h.lexicalRank}` : '', h.semanticRank ? `S${h.semanticRank}` : ''].filter(Boolean).join(' ');
-	const dup = h.duplicates.length ? `  ×${h.duplicates.length + 1}` : '';
+	const ranks = [h.lexicalRank ? `L${h.lexicalRank}` : '', h.semanticRank ? `S${h.semanticRank}` : '']
+		.filter(Boolean)
+		.join(' ');
+	const dup = h.duplicates.length > 0 ? `  ×${h.duplicates.length + 1}` : '';
 	console.log(`${String(n).padStart(2)}. ${firstLine}`);
 	console.log(`    ${s.title ? `"${s.title.slice(0, 60)}" · ` : ''}${where}  [${ranks}]${dup}`);
 	const open = sessionOpenTargets(s)[0];
-	console.log(`    id: ${h.prompt.id}${open?.uri ? `\n    open: ${open.uri}` : open?.command ? `\n    resume: ${open.command}` : ''}`);
+	console.log(`    id: ${h.prompt.id}`);
+	if (open?.uri) {
+		console.log(`    open: ${open.uri}`);
+	} else if (open?.command) {
+		console.log(`    resume: ${open.command}`);
+	}
 }
 
 main().catch((e: unknown) => {

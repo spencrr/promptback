@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <!-- Promptback: a chat bubble with a "back" arrow — find the prompt you already wrote. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Promptback">
+  <title>Promptback</title>
+  <!-- A chat bubble with a "back" arrow: find the prompt you already wrote. -->
   <rect width="128" height="128" rx="26" fill="#1f2430"/>
   <path d="M30 30h68a10 10 0 0 1 10 10v44a10 10 0 0 1-10 10H56l-18 14v-14h-8a10 10 0 0 1-10-10V40a10 10 0 0 1 10-10z"
         fill="none" stroke="#e8edf2" stroke-width="7" stroke-linejoin="round"/>

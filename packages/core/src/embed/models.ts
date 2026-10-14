@@ -5,9 +5,15 @@ import { Registry } from '../registry.js';
 
 /** A file of a local model. `sha256` is required for downloadable (built-in) models and optional for user manifests. */
 export const modelFileSchema = z.object({
-	path: z.string().min(1).regex(/^[^\\]+$/, 'use forward slashes'),
+	path: z
+		.string()
+		.min(1)
+		.regex(/^[^\\]+$/, 'use forward slashes'),
 	size: z.number().int().positive(),
-	sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+	sha256: z
+		.string()
+		.regex(/^[0-9a-f]{64}$/)
+		.optional(),
 });
 
 /**
@@ -61,9 +67,17 @@ export const LOCAL_MODELS: readonly LocalModelSpec[] = [
 				size: 34_014_426,
 				sha256: '6c9c6101a956d62dfb5e7190c538226c0c5bb9cb27b651234b6df063ee7dbfe4',
 			},
-			{ path: 'tokenizer.json', size: 711_396, sha256: 'd241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66' },
+			{
+				path: 'tokenizer.json',
+				size: 711_396,
+				sha256: 'd241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66',
+			},
 			BERT_TOKENIZER_CONFIG,
-			{ path: 'config.json', size: 683, sha256: 'fa73f90bf92c8cace1fbcb709626306f2bdbc9ea3e5b5f94b440df9b6aa56350' },
+			{
+				path: 'config.json',
+				size: 683,
+				sha256: 'fa73f90bf92c8cace1fbcb709626306f2bdbc9ea3e5b5f94b440df9b6aa56350',
+			},
 		],
 	},
 	{
@@ -84,9 +98,17 @@ export const LOCAL_MODELS: readonly LocalModelSpec[] = [
 				size: 22_972_370,
 				sha256: 'afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1',
 			},
-			{ path: 'tokenizer.json', size: 711_661, sha256: 'da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0' },
+			{
+				path: 'tokenizer.json',
+				size: 711_661,
+				sha256: 'da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0',
+			},
 			BERT_TOKENIZER_CONFIG,
-			{ path: 'config.json', size: 650, sha256: '7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7' },
+			{
+				path: 'config.json',
+				size: 650,
+				sha256: '7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7',
+			},
 		],
 	},
 ];
@@ -119,7 +141,7 @@ export function loadModelManifest(dir: string): LocalModelSpec | undefined {
 	try {
 		raw = JSON.parse(fs.readFileSync(file, 'utf8'));
 	} catch (e) {
-		throw new Error(`${file} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
+		throw new Error(`${file} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
 	}
 	const r = localModelSpecSchema.safeParse(raw);
 	if (!r.success) {

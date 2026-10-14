@@ -62,9 +62,9 @@ export function clientLabel(id: string | undefined, registry: Registry<PromptSou
 		return 'unknown client';
 	}
 	for (const s of registry.list()) {
-		const c = s.clients.find(c => c.id === id);
-		if (c) {
-			return c.label;
+		const client = s.clients.find(c => c.id === id);
+		if (client) {
+			return client.label;
 		}
 	}
 	return id;

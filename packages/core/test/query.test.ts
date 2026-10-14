@@ -9,7 +9,7 @@ describe('chunkText', () => {
 	});
 
 	it('splits long prompts at boundaries with exact offsets, overlap and a cap', () => {
-		const para = (n: number) => `Paragraph ${n}. ` + 'word '.repeat(80);
+		const para = (n: number) => `Paragraph ${n}. ${'word '.repeat(80)}`;
 		const text = Array.from({ length: 40 }, (_, i) => para(i)).join('\n\n');
 		const chunks = chunkText(text, { targetChars: 1000, overlapChars: 150, maxChunks: 5 });
 		expect(chunks).toHaveLength(5);
@@ -26,7 +26,10 @@ describe('parseQuery', () => {
 	const now = new Date(2026, 9, 5, 12).getTime();
 
 	it('extracts operators, phrases and exclusions', () => {
-		const q = parseQuery('tree view repo:PyRIT after:2026-09 client:cli "design doc" -draft from:any mode:sem', now);
+		const q = parseQuery(
+			'tree view repo:PyRIT after:2026-09 client:cli "design doc" -draft from:any mode:sem',
+			now,
+		);
 		expect(q.freeText).toBe('tree view design doc');
 		expect(q.terms).toEqual(['tree', 'view', 'design', 'doc']);
 		expect(q.phrases).toEqual(['design doc']);

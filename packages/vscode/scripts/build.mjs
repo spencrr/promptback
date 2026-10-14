@@ -1,9 +1,11 @@
+// biome-ignore-all lint/suspicious/noConsole: build scripts report progress on stdout.
 // Bundles the extension (extension host) and the index host process (child process) with esbuild.
-import * as esbuild from 'esbuild';
+
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const production = process.argv.includes('--production');

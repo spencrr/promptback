@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
 import { type IndexStatus, type RecentSession, sourceCatalog } from '@promptback/core';
+import * as vscode from 'vscode';
 import type { HostClient } from './hostClient.js';
 
 /** Sidebar trees in the "Promptback" activity-bar container (main window; the Agents window has no activity bar). */
@@ -20,7 +20,7 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionNode
 	readonly onDidChangeTreeData = this.emitter.event;
 	private cache: Promise<RecentSession[]> | undefined;
 
-	constructor(private readonly host: HostClient) { }
+	constructor(private readonly host: HostClient) {}
 
 	refresh(): void {
 		this.cache = undefined;
@@ -45,18 +45,30 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionNode
 	getTreeItem(node: SessionNode): vscode.TreeItem {
 		switch (node.kind) {
 			case 'group': {
-				const item = new vscode.TreeItem(node.label, node.label === 'Today' ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
+				const item = new vscode.TreeItem(
+					node.label,
+					node.label === 'Today'
+						? vscode.TreeItemCollapsibleState.Expanded
+						: vscode.TreeItemCollapsibleState.Collapsed,
+				);
 				item.description = `${node.sessions.length}`;
 				item.contextValue = 'group';
 				return item;
 			}
 			case 'session': {
 				const s = node.item.session;
-				const item = new vscode.TreeItem(cleanTitle(s.title) ?? firstLine(node.item.prompts.at(-1)?.preview ?? 'Untitled session'), vscode.TreeItemCollapsibleState.Collapsed);
-				const where = s.repository ? `${s.repository}${s.repositoryInferred ? ' (inferred)' : ''}` : s.workspaceless ? 'no folder' : folderName(s.cwd);
-				item.description = [where, `${node.item.promptCount} prompt${node.item.promptCount === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+				const item = new vscode.TreeItem(
+					cleanTitle(s.title) ?? firstLine(node.item.prompts.at(-1)?.preview ?? 'Untitled session'),
+					vscode.TreeItemCollapsibleState.Collapsed,
+				);
+				const where = placeLabel(s);
+				item.description = [where, `${node.item.promptCount} prompt${node.item.promptCount === 1 ? '' : 's'}`]
+					.filter(Boolean)
+					.join(' · ');
 				item.iconPath = new vscode.ThemeIcon(clientIcon(s.client));
-				item.tooltip = new vscode.MarkdownString(`**${escape(s.title ?? 'Untitled session')}**\n\n${escape(where ?? '')} · last active ${new Date(node.item.lastActivity).toLocaleString()}`);
+				item.tooltip = new vscode.MarkdownString(
+					`**${escapeMarkdown(s.title ?? 'Untitled session')}**\n\n${escapeMarkdown(where ?? '')} · last active ${new Date(node.item.lastActivity).toLocaleString()}`,
+				);
 				item.contextValue = 'session';
 				item.id = `session:${s.key}`;
 				return item;
@@ -68,7 +80,11 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionNode
 				item.iconPath = new vscode.ThemeIcon('comment');
 				item.contextValue = 'prompt';
 				item.id = `prompt:${node.prompt.id}`;
-				item.command = { command: 'promptback.revealPrompt', title: 'Show in Prompt Explorer', arguments: [node] };
+				item.command = {
+					command: 'promptback.revealPrompt',
+					title: 'Show in Prompt Explorer',
+					arguments: [node],
+				};
 				return item;
 			}
 		}
@@ -81,7 +97,7 @@ export class IndexTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
 	readonly onDidChangeTreeData = this.emitter.event;
 	private progress: string | undefined;
 
-	constructor(private readonly host: HostClient) { }
+	constructor(private readonly host: HostClient) {}
 
 	refresh(progress?: string): void {
 		this.progress = progress;
@@ -97,17 +113,30 @@ export class IndexTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
 		}
 		const pct = s.chunks ? Math.round((s.embeddedChunks / s.chunks) * 100) : 100;
 		const rows = [
-			row('Prompts', `${s.prompts.toLocaleString()} in ${s.sessions.toLocaleString()} sessions`, 'comment-discussion'),
-			row('Semantic', `${pct}% embedded${s.embeddingPaused ? ' (paused)' : ''}`, s.pendingChunks && !s.embeddingPaused ? 'sync~spin' : 'sparkle',
-				`${s.embeddedChunks.toLocaleString()} of ${s.chunks.toLocaleString()} chunks embedded`),
+			row(
+				'Prompts',
+				`${s.prompts.toLocaleString()} in ${s.sessions.toLocaleString()} sessions`,
+				'comment-discussion',
+			),
+			row(
+				'Semantic',
+				`${pct}% embedded${s.embeddingPaused ? ' (paused)' : ''}`,
+				s.pendingChunks && !s.embeddingPaused ? 'sync~spin' : 'sparkle',
+				{ tooltip: `${s.embeddedChunks.toLocaleString()} of ${s.chunks.toLocaleString()} chunks embedded` },
+			),
 			row('Model', s.model ?? 'none', 'symbol-namespace'),
 			row('Last scan', s.lastSyncAt ? relative(s.lastSyncAt) : 'never', 'history'),
 		];
 		if (this.progress) {
 			rows.splice(2, 0, row('Working', this.progress, 'loading~spin'));
 		}
-		if (s.errors.length) {
-			rows.push(row('Problems', `${s.errors.length}`, 'warning', s.errors.slice(0, 5).join('\n'), 'promptback.showLog'));
+		if (s.errors.length > 0) {
+			rows.push(
+				row('Problems', `${s.errors.length}`, 'warning', {
+					tooltip: s.errors.slice(0, 5).join('\n'),
+					command: 'promptback.showLog',
+				}),
+			);
 		}
 		return rows;
 	}
@@ -117,13 +146,26 @@ export class IndexTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
 	}
 }
 
-function row(label: string, description: string, icon: string, tooltip?: string, command?: string): vscode.TreeItem {
+/** Repository (flagging inferred ones), `no folder`, or the folder name. */
+function placeLabel(s: RecentSession['session']): string | undefined {
+	if (s.repository) {
+		return `${s.repository}${s.repositoryInferred ? ' (inferred)' : ''}`;
+	}
+	return s.workspaceless ? 'no folder' : folderName(s.cwd);
+}
+
+function row(
+	label: string,
+	description: string,
+	icon: string,
+	extra: { readonly tooltip?: string; readonly command?: string } = {},
+): vscode.TreeItem {
 	const item = new vscode.TreeItem(label);
 	item.description = description;
 	item.iconPath = new vscode.ThemeIcon(icon);
-	item.tooltip = tooltip ?? `${label}: ${description}`;
-	if (command) {
-		item.command = { command, title: label };
+	item.tooltip = extra.tooltip ?? `${label}: ${description}`;
+	if (extra.command) {
+		item.command = { command: extra.command, title: label };
 	}
 	return item;
 }
@@ -131,13 +173,21 @@ function row(label: string, description: string, icon: string, tooltip?: string,
 function groupByRecency(sessions: readonly RecentSession[], now = Date.now()): [string, RecentSession[]][] {
 	const day = new Date(now);
 	const today = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
-	const buckets: [string, number][] = [['Today', today], ['Yesterday', today - 86_400_000], ['This week', today - 6 * 86_400_000], ['Earlier', -Infinity]];
+	const buckets: [string, number][] = [
+		['Today', today],
+		['Yesterday', today - 86_400_000],
+		['This week', today - 6 * 86_400_000],
+		['Earlier', Number.NEGATIVE_INFINITY],
+	];
 	const out = new Map<string, RecentSession[]>();
 	for (const s of sessions) {
 		const label = buckets.find(([, start]) => s.lastActivity >= start)![0];
 		(out.get(label) ?? out.set(label, []).get(label)!).push(s);
 	}
-	return buckets.map(([l]) => l).filter(l => out.has(l)).map(l => [l, out.get(l)!]);
+	return buckets
+		.map(([l]) => l)
+		.filter(l => out.has(l))
+		.map(l => [l, out.get(l)!]);
 }
 
 function firstLine(text: string): string {
@@ -147,7 +197,15 @@ function firstLine(text: string): string {
 
 /** Session titles are often the first prompt verbatim: keep its first meaningful line, without markdown markers. */
 function cleanTitle(title: string | undefined): string | undefined {
-	const line = title?.split(/\r?\n|⏎/).map(l => l.replace(/^[#>*\-\s`]+/, '').replace(/\*\*/g, '').trim()).find(l => l.length > 0);
+	const line = title
+		?.split(/\r?\n|⏎/)
+		.map(l =>
+			l
+				.replace(/^[#>*\-\s`]+/, '')
+				.replace(/\*\*/g, '')
+				.trim(),
+		)
+		.find(l => l.length > 0);
 	return line ? firstLine(line) : undefined;
 }
 
@@ -155,13 +213,19 @@ function folderName(cwd: string | undefined): string | undefined {
 	return cwd?.split(/[\\/]/).filter(Boolean).at(-1);
 }
 
-function escape(s: string): string {
+function escapeMarkdown(s: string): string {
 	return s.replace(/[\\`*_{}[\]()#+\-.!|<>]/g, '\\$&');
 }
 
 function relative(ts: number): string {
 	const s = Math.max(0, (Date.now() - ts) / 1000);
-	const steps: [number, string][] = [[31_536_000, 'y'], [2_592_000, 'mo'], [86_400, 'd'], [3_600, 'h'], [60, 'm']];
+	const steps: [number, string][] = [
+		[31_536_000, 'y'],
+		[2_592_000, 'mo'],
+		[86_400, 'd'],
+		[3600, 'h'],
+		[60, 'm'],
+	];
 	for (const [sec, unit] of steps) {
 		if (s >= sec) {
 			return `${Math.floor(s / sec)}${unit} ago`;

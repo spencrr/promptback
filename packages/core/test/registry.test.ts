@@ -4,8 +4,8 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
 import { LOCAL_MODELS, loadModelManifest, localModelSpecSchema, localModels } from '../src/embed/models.js';
-import { type EmbeddingProviderPlugin, createEmbeddingProvider, embeddingProviders } from '../src/embed/registry.js';
-import { PluginOptionsError, Registry, RegistryError, parseOptions } from '../src/registry.js';
+import { createEmbeddingProvider, type EmbeddingProviderPlugin, embeddingProviders } from '../src/embed/registry.js';
+import { PluginOptionsError, parseOptions, Registry, RegistryError } from '../src/registry.js';
 import { promptSources, sourceAliases, sourceCatalog } from '../src/sources/registry.js';
 
 const tmps: string[] = [];
@@ -28,7 +28,10 @@ describe('Registry', () => {
 	});
 
 	it('validates plugin options with readable errors', () => {
-		const plugin = { id: 'p', options: z.object({ n: z.number().int().min(1).default(1), s: z.string().optional() }) };
+		const plugin = {
+			id: 'p',
+			options: z.object({ n: z.number().int().min(1).default(1), s: z.string().optional() }),
+		};
 		expect(parseOptions('widget', plugin, undefined)).toEqual({ n: 1 });
 		expect(parseOptions('widget', plugin, { n: 3, s: 'x' })).toEqual({ n: 3, s: 'x' });
 		let error: unknown;
@@ -45,10 +48,18 @@ describe('Registry', () => {
 describe('embedding provider registry', () => {
 	it('knows the built-ins and validates their options', async () => {
 		expect(embeddingProviders.ids()).toEqual(['local', 'openai-compatible', 'none']);
-		expect(await createEmbeddingProvider({ kind: 'none' }, { cacheDir: 'x', allowDownload: false })).toBeUndefined();
-		await expect(createEmbeddingProvider({ kind: 'openai-compatible', baseUrl: 'not a url', model: '' }, { cacheDir: 'x', allowDownload: false }))
-			.rejects.toThrow(/Invalid options for embedding provider 'openai-compatible': baseUrl: .*; model: /);
-		await expect(createEmbeddingProvider({ kind: 'nope' }, { cacheDir: 'x', allowDownload: false })).rejects.toThrow(/Unknown embedding provider 'nope'/);
+		expect(
+			await createEmbeddingProvider({ kind: 'none' }, { cacheDir: 'x', allowDownload: false }),
+		).toBeUndefined();
+		await expect(
+			createEmbeddingProvider(
+				{ kind: 'openai-compatible', baseUrl: 'not a url', model: '' },
+				{ cacheDir: 'x', allowDownload: false },
+			),
+		).rejects.toThrow(/Invalid options for embedding provider 'openai-compatible': baseUrl: .*; model: /);
+		await expect(
+			createEmbeddingProvider({ kind: 'nope' }, { cacheDir: 'x', allowDownload: false }),
+		).rejects.toThrow(/Unknown embedding provider 'nope'/);
 	});
 
 	it('accepts a third-party provider through its own registry', async () => {
@@ -67,7 +78,11 @@ describe('embedding provider registry', () => {
 				}),
 		};
 		const registry = new Registry<EmbeddingProviderPlugin>('embedding provider', [fake]);
-		const p = await createEmbeddingProvider({ kind: 'fake', dims: 8 }, { cacheDir: 'x', allowDownload: false }, registry);
+		const p = await createEmbeddingProvider(
+			{ kind: 'fake', dims: 8 },
+			{ cacheDir: 'x', allowDownload: false },
+			registry,
+		);
 		expect(p?.info.dims).toBe(8);
 	});
 });
@@ -85,11 +100,29 @@ describe('local model registry', () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'promptback-model-'));
 		tmps.push(dir);
 		expect(loadModelManifest(dir)).toBeUndefined();
-		fs.writeFileSync(path.join(dir, 'model.json'), JSON.stringify({ id: 'my-model', displayName: 'Mine', dims: 0, maxTokens: 128, pooling: 'mean', files: [] }));
+		fs.writeFileSync(
+			path.join(dir, 'model.json'),
+			JSON.stringify({
+				id: 'my-model',
+				displayName: 'Mine',
+				dims: 0,
+				maxTokens: 128,
+				pooling: 'mean',
+				files: [],
+			}),
+		);
 		expect(() => loadModelManifest(dir)).toThrow(/not a valid model manifest: dims: .*; files: /);
 		fs.writeFileSync(
 			path.join(dir, 'model.json'),
-			JSON.stringify({ id: 'my-model', displayName: 'Mine', dims: 256, maxTokens: 128, pooling: 'mean', modelFile: 'model.onnx', files: [{ path: 'model.onnx', size: 10 }] }),
+			JSON.stringify({
+				id: 'my-model',
+				displayName: 'Mine',
+				dims: 256,
+				maxTokens: 128,
+				pooling: 'mean',
+				modelFile: 'model.onnx',
+				files: [{ path: 'model.onnx', size: 10 }],
+			}),
 		);
 		const spec = loadModelManifest(dir);
 		expect(spec).toMatchObject({ id: 'my-model', dims: 256, repo: '', modelFile: 'model.onnx' });
@@ -105,8 +138,17 @@ describe('prompt source registry', () => {
 	it('exposes the built-in sources, their clients and query aliases', () => {
 		expect(promptSources.ids()).toEqual(['copilot', 'vscode-chat', 'agent-host', 'claude-code', 'codex']);
 		const catalog = sourceCatalog();
-		expect(Object.keys(catalog.clients).sort()).toEqual([
-			'claude/cli', 'claude/sdk', 'claude/vscode', 'codex/cli', 'codex/exec', 'codex/vscode', 'github/autopilot', 'github/cli', 'vscode-agent-host', 'vscode-chat',
+		expect(Object.keys(catalog.clients).sort((a, b) => a.localeCompare(b))).toEqual([
+			'claude/cli',
+			'claude/sdk',
+			'claude/vscode',
+			'codex/cli',
+			'codex/exec',
+			'codex/vscode',
+			'github/autopilot',
+			'github/cli',
+			'vscode-agent-host',
+			'vscode-chat',
 		]);
 		const aliases = sourceAliases();
 		expect(aliases.sources.get('cli')).toBe('copilot');

@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
-import { type ConfigurablePlugin, Registry, parseOptions } from '../registry.js';
-import { DEFAULT_LOCAL_MODEL, getModelSpec, loadModelManifest } from './models.js';
+import { type ConfigurablePlugin, parseOptions, Registry } from '../registry.js';
 import { resolveModelDir } from './modelStore.js';
+import { DEFAULT_LOCAL_MODEL, getModelSpec, loadModelManifest } from './models.js';
 import { OnnxEmbeddingProvider } from './onnx.js';
 import { OpenAICompatibleEmbeddingProvider } from './openai.js';
 import type { EmbeddingProvider } from './provider.js';
@@ -29,6 +29,7 @@ export interface EmbeddingProviderPlugin<O = unknown> extends ConfigurablePlugin
 	readonly description: string;
 	/** True when text never leaves the machine. */
 	readonly local: boolean;
+	// biome-ignore lint/style/useConsistentMethodSignatures: a method signature is bivariant in O, so plugins with specific option types fit one registry.
 	create(options: O, env: ProviderEnvironment): Promise<EmbeddingProvider | undefined>;
 }
 
@@ -77,7 +78,8 @@ export const localProvider: EmbeddingProviderPlugin<z.infer<typeof localProvider
 export const openAICompatibleProvider: EmbeddingProviderPlugin<z.infer<typeof openAICompatibleProviderOptions>> = {
 	id: 'openai-compatible',
 	label: 'OpenAI-compatible endpoint',
-	description: 'Any /embeddings endpoint (Azure OpenAI, Foundry, Ollama, LM Studio). Remote endpoints receive your prompt text.',
+	description:
+		'Any /embeddings endpoint (Azure OpenAI, Foundry, Ollama, LM Studio). Remote endpoints receive your prompt text.',
 	local: false,
 	options: openAICompatibleProviderOptions,
 	async create(o, env) {
@@ -124,12 +126,16 @@ export type EmbeddingConfig =
 export const NO_EMBEDDING = 'none';
 
 /** Validates `config` against its plugin's schema and instantiates the provider. Every failure is a rejection. */
-export async function createEmbeddingProvider(
+export function createEmbeddingProvider(
 	config: EmbeddingConfig,
 	env: ProviderEnvironment,
 	registry: Registry<EmbeddingProviderPlugin> = embeddingProviders,
 ): Promise<EmbeddingProvider | undefined> {
-	const { kind, ...rest } = config;
-	const plugin = registry.require(kind);
-	return plugin.create(parseOptions(registry.kind, plugin, rest), env);
+	try {
+		const { kind, ...rest } = config;
+		const plugin = registry.require(kind);
+		return plugin.create(parseOptions(registry.kind, plugin, rest), env);
+	} catch (e) {
+		return Promise.reject(e);
+	}
 }

@@ -55,7 +55,7 @@ export async function syncSessionFiles<F extends { readonly path: string }>(
 			const r = o.read(file, st);
 			store.transaction(() => {
 				if (r) {
-					if (r.prompts.length) {
+					if (r.prompts.length > 0) {
 						store.upsertSession(r.session);
 						sessionsChanged = true;
 					}
@@ -65,7 +65,12 @@ export async function syncSessionFiles<F extends { readonly path: string }>(
 				} else if (prev?.key) {
 					removed += store.deleteSession(prev.key);
 				}
-				store.setFileState(file.path, o.kind, { size: st.size, mtimeMs: st.mtimeMs, key: r?.session.key ?? '', v: o.version });
+				store.setFileState(file.path, o.kind, {
+					size: st.size,
+					mtimeMs: st.mtimeMs,
+					key: r?.session.key ?? '',
+					v: o.version,
+				});
 			});
 		} catch (e) {
 			errors.push(`${file.path}: ${errorMessage(e)}`);
@@ -134,7 +139,10 @@ export function textContent(content: unknown, textTypes: readonly string[]): str
 	}
 	return content
 		.flatMap(block =>
-			block && typeof block === 'object' && textTypes.includes(String((block as { type?: unknown }).type)) && typeof (block as { text?: unknown }).text === 'string'
+			block &&
+			typeof block === 'object' &&
+			textTypes.includes(String((block as { type?: unknown }).type)) &&
+			typeof (block as { text?: unknown }).text === 'string'
 				? [(block as { text: string }).text]
 				: [],
 		)
@@ -160,6 +168,9 @@ export function leadingTag(text: string): string | undefined {
 
 /** Errors from readers that should be surfaced per file but not stop the sync. */
 export function readerError(file: string, badLines: number, oversized: number): string | undefined {
-	const parts = [badLines ? `${badLines} unparsable line(s)` : '', oversized ? `${oversized} oversized line(s) skipped` : ''].filter(Boolean);
-	return parts.length ? `${file}: ${parts.join(', ')}` : undefined;
+	const parts = [
+		badLines ? `${badLines} unparsable line(s)` : '',
+		oversized ? `${oversized} oversized line(s) skipped` : '',
+	].filter(Boolean);
+	return parts.length > 0 ? `${file}: ${parts.join(', ')}` : undefined;
 }

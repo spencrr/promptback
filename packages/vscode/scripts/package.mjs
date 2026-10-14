@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noConsole: build scripts report progress on stdout.
 // Produces a platform-specific VSIX:
 //   1. production bundles (dist/extension.js, dist/host.js, dist/mcp.js, dist/webview.js)
 //   2. onnxruntime-node (+ onnxruntime-common) copied next to the bundle, pruned to one platform
@@ -30,7 +31,8 @@ const [platform, arch] = target.split('-');
 const bundleModel = args.includes('--bundle-model');
 
 // Scripts run with this Node binary and resolved entry points: no shell, no PATH lookup.
-const run = (script, scriptArgs) => execFileSync(process.execPath, [script, ...scriptArgs], { cwd: root, stdio: 'inherit' });
+const run = (script, scriptArgs) =>
+	execFileSync(process.execPath, [script, ...scriptArgs], { cwd: root, stdio: 'inherit' });
 console.log(`\n== Building (${target})`);
 fs.rmSync(path.join(root, 'dist'), { recursive: true, force: true });
 run(path.join(root, 'scripts', 'build.mjs'), ['--production']);
@@ -40,13 +42,17 @@ const nm = path.join(root, 'dist', 'node_modules');
 const ortDir = path.dirname(require.resolve('onnxruntime-node/package.json'));
 const findPkgRoot = file => {
 	let d = path.dirname(file);
-	while (!fs.existsSync(path.join(d, 'package.json')) || !JSON.parse(fs.readFileSync(path.join(d, 'package.json'), 'utf8')).name) {
+	while (
+		!fs.existsSync(path.join(d, 'package.json')) ||
+		!JSON.parse(fs.readFileSync(path.join(d, 'package.json'), 'utf8')).name
+	) {
 		d = path.dirname(d);
 	}
 	return d;
 };
 const commonDir = findPkgRoot(createRequire(path.join(ortDir, 'package.json')).resolve('onnxruntime-common'));
-const copy = (src, dst, filter = () => true) => fs.cpSync(src, dst, { recursive: true, filter: s => filter(path.relative(src, s)) });
+const copy = (src, dst, filter = () => true) =>
+	fs.cpSync(src, dst, { recursive: true, filter: s => filter(path.relative(src, s)) });
 copy(ortDir, path.join(nm, 'onnxruntime-node'), rel => {
 	const p = rel.split(path.sep).join('/');
 	if (p === '' || p === 'package.json' || p === 'LICENSE' || p === 'README.md') {
@@ -66,7 +72,14 @@ copy(ortDir, path.join(nm, 'onnxruntime-node'), rel => {
 });
 copy(commonDir, path.join(nm, 'onnxruntime-common'), rel => {
 	const p = rel.split(path.sep).join('/');
-	return p === '' || p === 'package.json' || p === 'LICENSE' || p === 'dist' || p.startsWith('dist/cjs') || (p.startsWith('dist/esm') && !p.endsWith('.map'));
+	return (
+		p === '' ||
+		p === 'package.json' ||
+		p === 'LICENSE' ||
+		p === 'dist' ||
+		p.startsWith('dist/cjs') ||
+		(p.startsWith('dist/esm') && !p.endsWith('.map'))
+	);
 });
 if (!fs.existsSync(path.join(nm, 'onnxruntime-node', 'bin', 'napi-v6', platform, arch))) {
 	throw new Error(`onnxruntime-node has no binaries for ${target}`);
@@ -83,7 +96,11 @@ if (bundleModel) {
 			resolveDir: root,
 			loader: 'ts',
 		},
-		bundle: true, platform: 'node', format: 'esm', outfile: helper, logLevel: 'warning',
+		bundle: true,
+		platform: 'node',
+		format: 'esm',
+		outfile: helper,
+		logLevel: 'warning',
 	});
 	const { fetch: fetchModel } = await import(pathToFileURL(helper).href);
 	const r = await fetchModel(path.join(root, 'models'));
@@ -98,4 +115,4 @@ console.log('\n== Packaging VSIX');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const out = path.join(root, `${pkg.name}-${pkg.version}-${target}.vsix`);
 run(require.resolve('@vscode/vsce/vsce'), ['package', '--no-dependencies', '--target', target, '--out', out]);
-console.log(`\nCreated ${out} (${(fs.statSync(out).size / 1048576).toFixed(1)} MB)`);
+console.log(`\nCreated ${out} (${(fs.statSync(out).size / 1_048_576).toFixed(1)} MB)`);

@@ -11,31 +11,63 @@ let tmp: string;
 let engine: PromptSearchEngine;
 let client: Client;
 
-function writeSession(home: string, id: string, yaml: string, events: { content: string; source?: string; id: string; ts: string }[]) {
+function writeSession(
+	home: string,
+	id: string,
+	yaml: string,
+	events: { content: string; source?: string; id: string; ts: string }[],
+) {
 	const dir = path.join(home, 'session-state', id);
 	fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(path.join(dir, 'workspace.yaml'), yaml);
-	fs.writeFileSync(path.join(dir, 'events.jsonl'), events.map(e => JSON.stringify({
-		type: 'user.message', id: e.id, timestamp: e.ts, data: { content: e.content, ...(e.source && { source: e.source }) },
-	})).join('\n') + '\n');
+	fs.writeFileSync(
+		path.join(dir, 'events.jsonl'),
+		`${events
+			.map(e =>
+				JSON.stringify({
+					type: 'user.message',
+					id: e.id,
+					timestamp: e.ts,
+					data: { content: e.content, ...(e.source && { source: e.source }) },
+				}),
+			)
+			.join('\n')}\n`,
+	);
 }
 
 async function call(name: string, args: Record<string, unknown> = {}) {
 	const r = await client.callTool({ name, arguments: args });
-	return { text: (r.content as { text: string }[])[0]!.text, isError: !!r.isError };
+	return { text: (r.content as { text: string }[])[0]!.text, isError: Boolean(r.isError) };
 }
 
 beforeEach(async () => {
 	tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'promptback-mcp-'));
 	const home = path.join(tmp, 'copilot');
-	writeSession(home, 'sess-alpha', 'id: sess-alpha\nrepository: owner/webapp\nbranch: main\ncwd: c:\\src\\webapp\nclient_name: github/cli\nname: Flaky tests\n', [
-		{ content: 'Fix the flaky retry_policy test in the HTTP client', id: 'a1', ts: '2026-09-01T10:00:00.000Z' },
-		{ content: 'Summarize the kusto incident results', source: 'agent-xyz', id: 'a2', ts: '2026-09-01T10:05:00.000Z' },
-		{ content: `Now add a regression test. ${'More details. '.repeat(60)}`, id: 'a3', ts: '2026-09-01T10:10:00.000Z' },
-	]);
-	writeSession(home, 'sess-beta', 'id: sess-beta\nrepository: owner/docs\nclient_name: vscode-agent-host\nname: Design doc\n', [
-		{ content: 'Write a design doc for the tree view', id: 'b1', ts: '2026-09-02T10:00:00.000Z' },
-	]);
+	writeSession(
+		home,
+		'sess-alpha',
+		'id: sess-alpha\nrepository: owner/webapp\nbranch: main\ncwd: c:\\src\\webapp\nclient_name: github/cli\nname: Flaky tests\n',
+		[
+			{ content: 'Fix the flaky retry_policy test in the HTTP client', id: 'a1', ts: '2026-09-01T10:00:00.000Z' },
+			{
+				content: 'Summarize the kusto incident results',
+				source: 'agent-xyz',
+				id: 'a2',
+				ts: '2026-09-01T10:05:00.000Z',
+			},
+			{
+				content: `Now add a regression test. ${'More details. '.repeat(60)}`,
+				id: 'a3',
+				ts: '2026-09-01T10:10:00.000Z',
+			},
+		],
+	);
+	writeSession(
+		home,
+		'sess-beta',
+		'id: sess-beta\nrepository: owner/docs\nclient_name: vscode-agent-host\nname: Design doc\n',
+		[{ content: 'Write a design doc for the tree view', id: 'b1', ts: '2026-09-02T10:00:00.000Z' }],
+	);
 	engine = PromptSearchEngine.open({
 		indexDir: path.join(tmp, 'index'),
 		sources: {
@@ -63,8 +95,16 @@ afterEach(async () => {
 describe('MCP server', () => {
 	it('offers five read-only tools and usage instructions', async () => {
 		const { tools } = await client.listTools();
-		expect(tools.map(t => t.name).sort()).toEqual(['get_prompt', 'get_session', 'index_status', 'list_recent_sessions', 'search_prompts']);
-		expect(tools.every(t => t.annotations?.readOnlyHint === true && t.annotations.openWorldHint === false)).toBe(true);
+		expect(tools.map(t => t.name).sort()).toEqual([
+			'get_prompt',
+			'get_session',
+			'index_status',
+			'list_recent_sessions',
+			'search_prompts',
+		]);
+		expect(tools.every(t => t.annotations?.readOnlyHint === true && t.annotations.openWorldHint === false)).toBe(
+			true,
+		);
 		expect(client.getInstructions()).toContain('search_prompts');
 	});
 

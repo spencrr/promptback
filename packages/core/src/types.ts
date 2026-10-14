@@ -134,7 +134,11 @@ export interface SearchHit {
 	/** Character range of the best matching chunk within `prompt.text`. */
 	readonly matchRange?: readonly [start: number, end: number];
 	/** Other occurrences of the same text that were collapsed into this hit. */
-	readonly duplicates: readonly { readonly promptId: string; readonly sessionKey: string; readonly timestamp: number }[];
+	readonly duplicates: readonly {
+		readonly promptId: string;
+		readonly sessionKey: string;
+		readonly timestamp: number;
+	}[];
 	/** Further matches from the same session that were left out by the per-session cap. */
 	readonly moreInSession: number;
 }
@@ -264,4 +268,3 @@ export interface SessionOpenTarget {
 	/** Best-effort targets may fail (e.g. the Agents window only lists external CLI sessions modified in the last 7 days). */
 	readonly bestEffort?: boolean;
 }
-

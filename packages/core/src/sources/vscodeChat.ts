@@ -29,14 +29,22 @@ export function listChatSessionFiles(product: string, productRoot: string): Chat
 		if (files.length === 0) {
 			continue;
 		}
-		collect(out, product, dir, files, readWorkspaceUri(path.join(wsRoot, hash, 'workspace.json')));
+		collect(out, {
+			product,
+			dir,
+			files,
+			workspaceUri: readWorkspaceUri(path.join(wsRoot, hash, 'workspace.json')),
+		});
 	}
 	const emptyDir = path.join(productRoot, 'User', 'globalStorage', 'emptyWindowChatSessions');
-	collect(out, product, emptyDir, safeReaddir(emptyDir), undefined);
+	collect(out, { product, dir: emptyDir, files: safeReaddir(emptyDir) });
 	return out;
 }
 
-function collect(out: ChatSessionFile[], product: string, dir: string, files: string[], workspaceUri: string | undefined): void {
+function collect(
+	out: ChatSessionFile[],
+	{ product, dir, files, workspaceUri }: { product: string; dir: string; files: string[]; workspaceUri?: string },
+): void {
 	const jsonl = new Set(files.filter(f => f.endsWith('.jsonl')).map(f => f.slice(0, -'.jsonl'.length)));
 	for (const f of files) {
 		if (f.endsWith('.jsonl')) {
@@ -134,7 +142,7 @@ function applySet(state: unknown, p: ObjectPath, value: unknown): void {
 	if (p.length === 0) {
 		return;
 	}
-	const last = p[p.length - 1]!;
+	const last = p.at(-1)!;
 	if (typeof last === 'string' && UNSAFE_KEYS.has(last)) {
 		throw new Error('Unsafe path');
 	}
@@ -143,7 +151,7 @@ function applySet(state: unknown, p: ObjectPath, value: unknown): void {
 
 function applyPush(state: unknown, p: ObjectPath, values: unknown[] | undefined, startIndex: number | undefined): void {
 	const parent = walk(state, p);
-	const key = p[p.length - 1]!;
+	const key = p.at(-1)!;
 	if (typeof key === 'string' && UNSAFE_KEYS.has(key)) {
 		throw new Error('Unsafe path');
 	}
@@ -190,7 +198,12 @@ export function readChatSession(file: ChatSessionFile, maxBytes = 512 * 1024 * 1
 		raw = JSON.parse(fs.readFileSync(file.path, 'utf8')) as SerializedSession;
 	} else {
 		const lines: string[] = [];
-		scanLines(file.path, { start: 0, end: st.size, wantLine: () => true, onLine: l => lines.push(l.toString('utf8')) });
+		scanLines(file.path, {
+			start: 0,
+			end: st.size,
+			wantLine: () => true,
+			onLine: l => lines.push(l.toString('utf8')),
+		});
 		raw = replayMutationLog(lines) as SerializedSession;
 	}
 	return projectChatSession(file, raw, st.mtimeMs);
@@ -242,7 +255,7 @@ export function projectChatSession(file: ChatSessionFile, raw: SerializedSession
 
 function firstLine(text: string, max: number): string {
 	const line = text.trim().split(/\r?\n/, 1)[0] ?? '';
-	return line.length > max ? line.slice(0, max - 1) + '…' : line;
+	return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
 function uriToPath(uri: string): string {

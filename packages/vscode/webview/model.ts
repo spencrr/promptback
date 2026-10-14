@@ -3,7 +3,14 @@
  * histogram, colours and the graph model. The host returns every matching occurrence once per query; everything here
  * is instant and local, and unit-tested.
  */
-import type { ClientInfo, ExploreResult, ExploreRow, PromptOrigin, SessionInfo, SourceCatalog } from '@promptback/core/types';
+import type {
+	ClientInfo,
+	ExploreResult,
+	ExploreRow,
+	PromptOrigin,
+	SessionInfo,
+	SourceCatalog,
+} from '@promptback/core/types';
 import type { GraphEdge, GraphNode } from './graph.js';
 
 export type FacetKey = 'origin' | 'client' | 'repo';
@@ -42,7 +49,15 @@ export function setClientCatalog(catalog: SourceCatalog): void {
 }
 
 export function clientInfo(id: string | undefined): ClientInfo {
-	return (id && clients[id]) || { id: id ?? 'unknown', label: id ?? 'Unknown', icon: 'history', color: 'foreground', aliases: [] };
+	return (
+		(id && clients[id]) || {
+			id: id ?? 'unknown',
+			label: id ?? 'Unknown',
+			icon: 'history',
+			color: 'foreground',
+			aliases: [],
+		}
+	);
 }
 
 export function clientLabel(id: string | undefined): string {
@@ -80,9 +95,12 @@ export function repoLabel(s: SessionInfo | undefined): string {
 
 export function facetValue(key: FacetKey, row: ExploreRow, session: SessionInfo | undefined): string {
 	switch (key) {
-		case 'origin': return row.origin;
-		case 'client': return session?.client ?? 'unknown';
-		case 'repo': return repoLabel(session);
+		case 'origin':
+			return row.origin;
+		case 'client':
+			return session?.client ?? 'unknown';
+		case 'repo':
+			return repoLabel(session);
 	}
 }
 
@@ -95,7 +113,7 @@ function passes(row: ExploreRow, s: SessionInfo | undefined, v: ViewState, skip?
 	}
 	for (const key of ['origin', 'client', 'repo'] as const) {
 		const sel = v.facets[key];
-		if (key !== skip && sel.length && !sel.includes(facetValue(key, row, s))) {
+		if (key !== skip && sel.length > 0 && !sel.includes(facetValue(key, row, s))) {
 			return false;
 		}
 	}
@@ -110,7 +128,13 @@ export interface FacetCount {
 /** A row of the table: a prompt, or a group header when grouping is on. */
 export type DisplayItem =
 	| { readonly kind: 'row'; readonly row: ExploreRow }
-	| { readonly kind: 'group'; readonly key: string; readonly label: string; readonly count: number; readonly color?: string };
+	| {
+			readonly kind: 'group';
+			readonly key: string;
+			readonly label: string;
+			readonly count: number;
+			readonly color?: string;
+	  };
 
 export interface ViewModel {
 	/** Visible rows in display order. */
@@ -143,7 +167,9 @@ export function computeView(result: ExploreResult, v: ViewState): ViewModel {
 				counts.set(sel, 0);
 			}
 		}
-		facets[key] = [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+		facets[key] = [...counts]
+			.map(([value, count]) => ({ value, count }))
+			.sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 	}
 
 	const timeline = result.rows.filter(r => passes(r, sess(r), v, 'date')).map(r => r.timestamp);
@@ -156,7 +182,7 @@ export function computeView(result: ExploreResult, v: ViewState): ViewModel {
 	rows = sortRows(rows, result, v);
 	if (v.hideDuplicates) {
 		const seen = new Set<string>();
-		rows = rows.filter(r => !seen.has(r.hash) && !!seen.add(r.hash));
+		rows = rows.filter(r => !seen.has(r.hash) && Boolean(seen.add(r.hash)));
 	}
 	const { rows: ordered, items } = group(rows, result, v.groupBy);
 	return { rows: ordered, items, dupCounts, facets, timeline, totalMatches: result.rows.length };
@@ -170,8 +196,12 @@ function sortRows(rows: ExploreRow[], result: ExploreResult, v: ViewState): Expl
 		relevance: () => 0,
 		time: (a, b) => a.timestamp - b.timestamp,
 		length: (a, b) => a.length - b.length,
-		repo: (a, b) => repoLabel(result.sessions[a.sessionKey]).localeCompare(repoLabel(result.sessions[b.sessionKey])) || b.timestamp - a.timestamp,
-		session: (a, b) => (result.sessions[a.sessionKey]?.title ?? '').localeCompare(result.sessions[b.sessionKey]?.title ?? '') || a.seq - b.seq,
+		repo: (a, b) =>
+			repoLabel(result.sessions[a.sessionKey]).localeCompare(repoLabel(result.sessions[b.sessionKey])) ||
+			b.timestamp - a.timestamp,
+		session: (a, b) =>
+			(result.sessions[a.sessionKey]?.title ?? '').localeCompare(result.sessions[b.sessionKey]?.title ?? '') ||
+			a.seq - b.seq,
 	};
 	if (v.sort === 'relevance') {
 		return v.sortDesc || browse ? rows : [...rows].reverse();
@@ -180,7 +210,11 @@ function sortRows(rows: ExploreRow[], result: ExploreResult, v: ViewState): Expl
 }
 
 /** Groups keep the current sort inside them; groups are ordered by their best (first) row. */
-function group(rows: readonly ExploreRow[], result: ExploreResult, by: GroupBy): { rows: ExploreRow[]; items: DisplayItem[] } {
+function group(
+	rows: readonly ExploreRow[],
+	result: ExploreResult,
+	by: GroupBy,
+): { rows: ExploreRow[]; items: DisplayItem[] } {
 	if (by === 'none') {
 		return { rows: [...rows], items: rows.map(row => ({ kind: 'row', row })) };
 	}
@@ -202,7 +236,12 @@ function group(rows: readonly ExploreRow[], result: ExploreResult, by: GroupBy):
 	return { rows: ordered, items: out };
 }
 
-function groupKey(row: ExploreRow, result: ExploreResult, by: GroupBy, topicColor: ReadonlyMap<number, string>): [string, string, string?] {
+function groupKey(
+	row: ExploreRow,
+	result: ExploreResult,
+	by: GroupBy,
+	topicColor: ReadonlyMap<number, string>,
+): [string, string, string?] {
 	const s = result.sessions[row.sessionKey];
 	switch (by) {
 		case 'day': {
@@ -217,7 +256,9 @@ function groupKey(row: ExploreRow, result: ExploreResult, by: GroupBy, topicColo
 		}
 		case 'topic': {
 			const t = result.topics.find(x => x.id === row.topic);
-			return t ? [`t${t.id}`, t.label, topicColor.get(t.id)] : ['other', row.topic === -1 ? 'Other topics' : 'Not clustered', OTHER_COLOR];
+			return t
+				? [`t${t.id}`, t.label, topicColor.get(t.id)]
+				: ['other', row.topic === -1 ? 'Other topics' : 'Not clustered', OTHER_COLOR];
 		}
 		default:
 			return ['', ''];
@@ -250,7 +291,9 @@ export function topicColors(result: ExploreResult): Map<number, string> {
 /** Stable colour assignment for categorical values: most frequent first; beyond the palette everything is "Other". */
 export function categoryColors(values: readonly string[]): Map<string, string> {
 	const counts = new Map<string, number>();
-	values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1));
+	for (const v of values) {
+		counts.set(v, (counts.get(v) ?? 0) + 1);
+	}
 	const ordered = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([v]) => v);
 	return new Map(ordered.map((v, i) => [v, i < PALETTE.length ? PALETTE[i]! : OTHER_COLOR]));
 }
@@ -263,13 +306,14 @@ export interface Bucket {
 
 /** Day/week/month buckets depending on the span, newest last. */
 export function histogram(timestamps: readonly number[], maxBuckets = 60): Bucket[] {
-	if (!timestamps.length) {
+	if (timestamps.length === 0) {
 		return [];
 	}
-	const min = Math.min(...timestamps), max = Math.max(...timestamps);
-	const DAY = 86_400_000;
-	const span = Math.max(DAY, max - min);
-	const size = [DAY, 7 * DAY, 30 * DAY, 91 * DAY, 365 * DAY].find(s => span / s <= maxBuckets) ?? 365 * DAY;
+	const min = Math.min(...timestamps);
+	const max = Math.max(...timestamps);
+	const Day = 86_400_000;
+	const span = Math.max(Day, max - min);
+	const size = [Day, 7 * Day, 30 * Day, 91 * Day, 365 * Day].find(s => span / s <= maxBuckets) ?? 365 * Day;
 	const start = startOfDay(min);
 	const n = Math.floor((max - start) / size) + 1;
 	const counts = new Array<number>(n).fill(0);
@@ -284,23 +328,35 @@ function startOfDay(t: number): number {
 	return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-const STOPWORDS = new Set(('the and for are was were with that this from have has had not but you your our can could would should will '
-	+ 'what when where which who why how about into then than them they their there these those also any some all just like want need '
-	+ 'please make use using get let lets its').split(' '));
+const STOPWORDS = new Set(
+	(
+		'the and for are was were with that this from have has had not but you your our can could would should will ' +
+		'what when where which who why how about into then than them they their there these those also any some all just like want need ' +
+		'please make use using get let lets its'
+	).split(' '),
+);
 
 /** Lowercased words to highlight (query words and quoted phrases; operators and stopwords dropped). */
 export function highlightTerms(freeText: string): string[] {
 	const quoted = [...freeText.matchAll(/"([^"]+)"/g)].map(m => m[1]!.toLowerCase());
-	const words = (freeText.replace(/"[^"]*"/g, ' ').toLowerCase().match(/[\p{L}\p{N}_]{3,}/gu) ?? []).filter(w => !STOPWORDS.has(w));
+	const words = (
+		freeText
+			.replace(/"[^"]*"/g, ' ')
+			.toLowerCase()
+			.match(/[\p{L}\p{N}_]{3,}/gu) ?? []
+	).filter(w => !STOPWORDS.has(w));
 	return [...new Set([...quoted, ...words])];
 }
 
 /** Splits text into plain/highlighted segments. Matches start at word boundaries ("design" hits "designs", not "redesign"). */
 export function segments(text: string, terms: readonly string[]): { text: string; hit: boolean }[] {
-	if (!terms.length || !text) {
+	if (terms.length === 0 || !text) {
 		return [{ text, hit: false }];
 	}
-	const re = new RegExp(`(?<![\\p{L}\\p{N}_])(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'giu');
+	const re = new RegExp(
+		`(?<![\\p{L}\\p{N}_])(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+		'giu',
+	);
 	const out: { text: string; hit: boolean }[] = [];
 	let last = 0;
 	for (const m of text.matchAll(re)) {
@@ -321,7 +377,13 @@ export function relativeTime(ts: number, now = Date.now()): string {
 	if (s < 60) {
 		return 'just now';
 	}
-	const steps: [number, string][] = [[31_536_000, 'y'], [2_592_000, 'mo'], [86_400, 'd'], [3_600, 'h'], [60, 'm']];
+	const steps: [number, string][] = [
+		[31_536_000, 'y'],
+		[2_592_000, 'mo'],
+		[86_400, 'd'],
+		[3600, 'h'],
+		[60, 'm'],
+	];
 	for (const [sec, unit] of steps) {
 		if (s >= sec) {
 			return `${Math.floor(s / sec)}${unit} ago`;
@@ -347,7 +409,8 @@ export interface GraphModel {
 export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number, colorBy: ColorBy): GraphModel {
 	const rows = vm.rows.slice(0, limit);
 	const sims = rows.map(r => r.similarity).filter((x): x is number => x !== undefined);
-	const lo = Math.min(...sims), hi = Math.max(...sims);
+	const lo = Math.min(...sims);
+	const hi = Math.max(...sims);
 	const topicColor = topicColors(result);
 	const keyOf = (r: ExploreRow): [string, string] => {
 		const s = result.sessions[r.sessionKey];
@@ -356,21 +419,28 @@ export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number, 
 				const t = result.topics.find(x => x.id === r.topic);
 				return t ? [`t${t.id}`, t.label] : ['other', r.topic === -1 ? 'Other topics' : 'Not clustered'];
 			}
-			case 'repo': return [repoLabel(s), repoLabel(s)];
-			case 'source': return [s?.client ?? 'unknown', clientLabel(s?.client)];
-			case 'session': return [r.sessionKey, s?.title ?? 'Untitled session'];
+			case 'repo':
+				return [repoLabel(s), repoLabel(s)];
+			case 'source':
+				return [s?.client ?? 'unknown', clientLabel(s?.client)];
+			case 'session':
+				return [r.sessionKey, s?.title ?? 'Untitled session'];
 		}
 	};
 	const keys = rows.map(keyOf);
-	const colors = colorBy === 'topic'
-		? new Map(result.topics.map(t => [`t${t.id}`, topicColor.get(t.id)!]))
-		: categoryColors(keys.map(([k]) => k));
+	const colors =
+		colorBy === 'topic'
+			? new Map(result.topics.map(t => [`t${t.id}`, topicColor.get(t.id)!]))
+			: categoryColors(keys.map(([k]) => k));
 	const colorFor = (k: string) => colors.get(k) ?? OTHER_COLOR;
 	// Categories beyond the palette share one grey "Other" slice.
-	const effective = keys.map(([k, label]): [string, string] => (colorBy !== 'topic' && colorFor(k) === OTHER_COLOR ? ['other', 'Other'] : [k, label]));
+	const effective = keys.map(([k, label]): [string, string] =>
+		colorBy !== 'topic' && colorFor(k) === OTHER_COLOR ? ['other', 'Other'] : [k, label],
+	);
 
 	const times = rows.map(r => r.timestamp);
-	const t0 = Math.min(...times), t1 = Math.max(...times);
+	const t0 = Math.min(...times);
+	const t1 = Math.max(...times);
 	const nodes: GraphNode[] = rows.map((r, i) => {
 		let relevance: number;
 		if (!result.freeText) {
@@ -380,12 +450,12 @@ export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number, 
 		} else {
 			relevance = 1 - i / Math.max(1, rows.length);
 		}
-		const [group] = effective[i]!;
+		const [slice] = effective[i]!;
 		return {
 			id: r.id,
 			label: r.preview.trim().split(/\r?\n/, 1)[0] ?? '',
-			group,
-			color: group === 'other' ? OTHER_COLOR : colorFor(group),
+			group: slice,
+			color: slice === 'other' ? OTHER_COLOR : colorFor(slice),
 			sessionKey: r.sessionKey,
 			seq: r.seq,
 			relevance: Math.max(0, Math.min(1, relevance)),
@@ -395,15 +465,24 @@ export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number, 
 	});
 
 	const groupStats = new Map<string, { label: string; color: string; count: number; best: number }>();
-	effective.forEach(([key, label], i) => {
+	for (const [i, [key, label]] of effective.entries()) {
 		const g = groupStats.get(key) ?? { label, color: nodes[i]!.color, count: 0, best: i };
 		g.count++;
 		groupStats.set(key, g);
-	});
-	const groups = [...groupStats].sort((a, b) => a[1].best - b[1].best).map(([key, g]) => ({ key, label: g.label, color: g.color, count: g.count }));
+	}
+	const groups = [...groupStats]
+		.sort((a, b) => a[1].best - b[1].best)
+		.map(([key, g]) => ({ key, label: g.label, color: g.color, count: g.count }));
 
 	const bySession = new Map<string, GraphNode[]>();
-	nodes.forEach(n => (bySession.get(n.sessionKey) ?? bySession.set(n.sessionKey, []).get(n.sessionKey)!).push(n));
+	for (const n of nodes) {
+		let list = bySession.get(n.sessionKey);
+		if (!list) {
+			list = [];
+			bySession.set(n.sessionKey, list);
+		}
+		list.push(n);
+	}
 	const edges: GraphEdge[] = [];
 	for (const list of bySession.values()) {
 		list.sort((a, b) => a.seq - b.seq);
@@ -415,7 +494,7 @@ export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number, 
 		const parentKey = result.sessions[key]?.forkOf;
 		const parent = parentKey ? bySession.get(parentKey) : undefined;
 		if (parent?.length) {
-			edges.push({ from: parent[parent.length - 1]!.id, to: list[0]!.id, kind: 'fork' });
+			edges.push({ from: parent.at(-1)!.id, to: list[0]!.id, kind: 'fork' });
 		}
 	}
 	return { nodes, edges, groups };

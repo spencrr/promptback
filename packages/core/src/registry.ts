@@ -29,7 +29,7 @@ export class PluginOptionsError extends Error {
 	) {
 		super(
 			`Invalid options for ${kind} '${pluginId}': ${issues
-				.map(i => `${i.path.length ? i.path.map(String).join('.') : '<root>'}: ${i.message}`)
+				.map(i => `${i.path.length > 0 ? i.path.map(String).join('.') : '<root>'}: ${i.message}`)
 				.join('; ')}`,
 		);
 	}

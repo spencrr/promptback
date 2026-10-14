@@ -11,17 +11,23 @@ export function findGitRoot(dir: string): string | undefined {
 	for (;;) {
 		const cached = rootCache.get(d);
 		if (cached !== undefined) {
-			visited.forEach(v => rootCache.set(v, cached));
+			for (const v of visited) {
+				rootCache.set(v, cached);
+			}
 			return cached ?? undefined;
 		}
 		visited.push(d);
 		if (fs.existsSync(path.join(d, '.git'))) {
-			visited.forEach(v => rootCache.set(v, d));
+			for (const v of visited) {
+				rootCache.set(v, d);
+			}
 			return d;
 		}
 		const parent = path.dirname(d);
 		if (parent === d) {
-			visited.forEach(v => rootCache.set(v, null));
+			for (const v of visited) {
+				rootCache.set(v, null);
+			}
 			return undefined;
 		}
 		d = parent;

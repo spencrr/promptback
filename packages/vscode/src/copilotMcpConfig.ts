@@ -4,7 +4,9 @@
 export function definesServer(configText: string, name: string): boolean {
 	try {
 		const servers: unknown = (JSON.parse(configText) as { mcpServers?: unknown } | null)?.mcpServers;
-		return !!servers && typeof servers === 'object' && Object.keys(servers).some(k => k.toLowerCase() === name);
+		return (
+			typeof servers === 'object' && servers !== null && Object.keys(servers).some(k => k.toLowerCase() === name)
+		);
 	} catch {
 		return false;
 	}

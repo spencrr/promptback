@@ -5,6 +5,7 @@ import { copilotHome } from '../paths.js';
 import type { SessionInfo, SessionOpenTarget } from '../types.js';
 import { errorMessage, mtime } from '../util/fs.js';
 import { agentsWindowLink } from './agentHost.js';
+import { baseSourceOptions, type PromptSourcePlugin, type SourceSyncResult } from './base.js';
 import {
 	type CopilotFileState,
 	copilotSessionKey,
@@ -12,7 +13,6 @@ import {
 	readCopilotEvents,
 	readCopilotSessionInfo,
 } from './copilot.js';
-import { type PromptSourcePlugin, type SourceSyncResult, baseSourceOptions } from './base.js';
 
 export const copilotSourceOptions = baseSourceOptions.extend({
 	/** Copilot home (`~/.copilot`); default `$COPILOT_HOME`, else `~/.copilot`. */
@@ -34,7 +34,13 @@ export const copilotSource: PromptSourcePlugin<CopilotSourceOptions> = {
 	aliases: ['cli', 'agent', 'agents'],
 	options: copilotSourceOptions,
 	clients: [
-		{ id: 'vscode-agent-host', label: 'Agents window', icon: 'copilot', color: 'blue', aliases: ['agent-host', 'agents', 'agent-window'] },
+		{
+			id: 'vscode-agent-host',
+			label: 'Agents window',
+			icon: 'copilot',
+			color: 'blue',
+			aliases: ['agent-host', 'agents', 'agent-window'],
+		},
 		{ id: 'github/cli', label: 'Copilot CLI', icon: 'terminal', color: 'green', aliases: ['cli', 'copilot-cli'] },
 		{ id: 'github/autopilot', label: 'Autopilot', icon: 'robot', color: 'orange', aliases: ['autopilot'] },
 	],
@@ -70,7 +76,11 @@ export const copilotSource: PromptSourcePlugin<CopilotSourceOptions> = {
 					}
 					if (res) {
 						if (res.reset && prev) {
-							const [a, r] = store.replaceSessionPrompts(copilotSessionKey(s.sessionId), res.prompts, chunker);
+							const [a, r] = store.replaceSessionPrompts(
+								copilotSessionKey(s.sessionId),
+								res.prompts,
+								chunker,
+							);
 							added += a;
 							removed += r;
 						} else {

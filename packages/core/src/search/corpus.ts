@@ -1,7 +1,7 @@
 import type { EmbeddingProvider } from '../embed/provider.js';
 import type { PromptMeta, Store, VectorMatrix } from '../store.js';
 import type { SessionInfo } from '../types.js';
-import { type GlobalVocabulary, buildVocabulary } from './topics.js';
+import { buildVocabulary, type GlobalVocabulary } from './topics.js';
 
 /**
  * Immutable in-memory snapshot of everything ranking needs: prompt metadata, sessions (with derived fork lineage)
@@ -18,14 +18,17 @@ export interface Corpus {
 	/** Row (in {@link matrix}) of each prompt's first chunk, used as the prompt's vector for topic clustering. */
 	readonly heads: ReadonlyMap<number, number>;
 	/** Word document frequencies over every prompt, built on first use (topic labels). */
-	vocabulary(): GlobalVocabulary;
+	vocabulary: () => GlobalVocabulary;
 }
 
 export class CorpusCache {
 	private current: Corpus | undefined;
 	private lastUsed = 0;
 
-	constructor(private readonly store: Store, private readonly provider: () => EmbeddingProvider | undefined) { }
+	constructor(
+		private readonly store: Store,
+		private readonly provider: () => EmbeddingProvider | undefined,
+	) {}
 
 	/** Drops the snapshot if it hasn't been used for `idleMs`; the next {@link get} rebuilds it. */
 	releaseIfIdle(idleMs: number): boolean {
@@ -58,7 +61,10 @@ export class CorpusCache {
 			}
 		}
 		let vocab: GlobalVocabulary | undefined;
-		const vocabulary = () => (vocab ??= buildVocabulary(this.store.iterateTexts(4000)));
+		const vocabulary = () => {
+			vocab ??= buildVocabulary(this.store.iterateTexts(4000));
+			return vocab;
+		};
 		this.current = { revision, key, fingerprint, meta, sessions, matrix, heads, vocabulary };
 		return this.current;
 	}
@@ -84,12 +90,12 @@ export function withLineage(list: readonly SessionInfo[], prompts: Iterable<Prom
 		if (eventId.startsWith('@')) {
 			continue;
 		}
-		let list = byEvent.get(eventId);
-		if (!list) {
-			list = [];
-			byEvent.set(eventId, list);
+		let holders = byEvent.get(eventId);
+		if (!holders) {
+			holders = [];
+			byEvent.set(eventId, holders);
 		}
-		list.push({ sessionKey: p.sessionKey, seq: p.seq });
+		holders.push({ sessionKey: p.sessionKey, seq: p.seq });
 	}
 
 	// child -> parent candidate -> { shared count, child's max shared seq }

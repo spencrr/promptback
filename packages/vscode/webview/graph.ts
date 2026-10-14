@@ -36,9 +36,12 @@ export interface GraphGroup {
 
 interface NodeState {
 	node: GraphNode;
-	x: number; y: number;
-	fromX: number; fromY: number;
-	toX: number; toY: number;
+	x: number;
+	y: number;
+	fromX: number;
+	fromY: number;
+	toX: number;
+	toY: number;
 	startAt: number;
 	alpha: number;
 	targetAlpha: number;
@@ -56,9 +59,9 @@ const STAGGER_MS = 22;
 
 export interface GraphCallbacks {
 	readonly reducedMotion: boolean;
-	onSelect(id: string): void;
-	onActivate(id: string): void;
-	onHover(id: string | undefined): void;
+	onSelect: (id: string) => void;
+	onActivate: (id: string) => void;
+	onHover: (id: string | undefined) => void;
 }
 
 export class ConstellationGraph {
@@ -78,7 +81,10 @@ export class ConstellationGraph {
 	private readonly observer: ResizeObserver;
 	private readonly cleanup: (() => void)[] = [];
 
-	constructor(private readonly canvas: HTMLCanvasElement, private readonly cb: GraphCallbacks) {
+	constructor(
+		private readonly canvas: HTMLCanvasElement,
+		private readonly cb: GraphCallbacks,
+	) {
 		this.ctx = canvas.getContext('2d')!;
 		this.observer = new ResizeObserver(() => this.resize());
 		this.observer.observe(canvas.parentElement ?? canvas);
@@ -103,7 +109,12 @@ export class ConstellationGraph {
 		this.resize();
 	}
 
-	setData(queryLabel: string, nodes: readonly GraphNode[], edges: readonly GraphEdge[], groups: readonly GraphGroup[]): void {
+	setData(
+		queryLabel: string,
+		nodes: readonly GraphNode[],
+		edges: readonly GraphEdge[],
+		groups: readonly GraphGroup[],
+	): void {
 		const now = performance.now();
 		if (queryLabel !== this.queryLabel) {
 			this.queryLabel = queryLabel;
@@ -113,15 +124,19 @@ export class ConstellationGraph {
 		this.groups = [...groups];
 		const targets = this.layout(nodes);
 		const next = new Map<string, NodeState>();
-		const cx = this.width / 2, cy = this.height / 2;
+		const cx = this.width / 2;
+		const cy = this.height / 2;
 		for (const n of nodes) {
 			const t = targets.get(n.id)!;
 			const prev = this.nodes.get(n.id);
 			next.set(n.id, {
 				node: n,
-				x: prev?.x ?? cx, y: prev?.y ?? cy,
-				fromX: prev?.x ?? cx, fromY: prev?.y ?? cy,
-				toX: t.x, toY: t.y,
+				x: prev?.x ?? cx,
+				y: prev?.y ?? cy,
+				fromX: prev?.x ?? cx,
+				fromY: prev?.y ?? cy,
+				toX: t.x,
+				toY: t.y,
 				startAt: now + (prev ? 0 : 140 + Math.min(n.rank, 60) * STAGGER_MS),
 				alpha: prev?.alpha ?? 0,
 				targetAlpha: 1,
@@ -164,11 +179,14 @@ export class ConstellationGraph {
 	dispose(): void {
 		cancelAnimationFrame(this.raf);
 		this.observer.disconnect();
-		this.cleanup.forEach(f => f());
+		for (const f of this.cleanup) {
+			f();
+		}
 	}
 
 	private get geometry() {
-		const cx = this.width / 2, cy = this.height / 2;
+		const cx = this.width / 2;
+		const cy = this.height / 2;
 		const R = Math.max(60, Math.min(this.width, this.height) / 2 - 44);
 		return { cx, cy, R, r0: Math.min(70, R * 0.22) };
 	}
@@ -177,9 +195,11 @@ export class ConstellationGraph {
 	private layout(nodes: readonly GraphNode[]): Map<string, { x: number; y: number }> {
 		const { cx, cy, R, r0 } = this.geometry;
 		const counts = new Map<string, number>();
-		nodes.forEach(n => counts.set(n.group, (counts.get(n.group) ?? 0) + 1));
+		for (const n of nodes) {
+			counts.set(n.group, (counts.get(n.group) ?? 0) + 1);
+		}
 		const present = this.groups.filter(g => counts.has(g.key));
-		const weights = present.map(g => Math.pow(counts.get(g.key)!, 0.85) + 0.6);
+		const weights = present.map(g => counts.get(g.key)! ** 0.85 + 0.6);
 		const total = weights.reduce((a, b) => a + b, 0) || 1;
 		this.slices = [];
 		let angle = -Math.PI / 2;
@@ -201,8 +221,10 @@ export class ConstellationGraph {
 		for (let iter = 0; iter < 60; iter++) {
 			for (let i = 0; i < pts.length; i++) {
 				for (let j = i + 1; j < pts.length; j++) {
-					const a = pts[i]!, b = pts[j]!;
-					const dx = b.x - a.x, dy = b.y - a.y;
+					const a = pts[i]!;
+					const b = pts[j]!;
+					const dx = b.x - a.x;
+					const dy = b.y - a.y;
 					const d = Math.hypot(dx, dy) || 0.01;
 					const min = a.size + b.size + 4;
 					if (d < min) {
@@ -245,8 +267,12 @@ export class ConstellationGraph {
 		for (const s of this.nodes.values()) {
 			const t = targets.get(s.node.id);
 			if (t) {
-				s.x = s.fromX = s.toX = t.x;
-				s.y = s.fromY = s.toY = t.y;
+				s.x = t.x;
+				s.fromX = t.x;
+				s.toX = t.x;
+				s.y = t.y;
+				s.fromY = t.y;
+				s.toY = t.y;
 			}
 		}
 		this.kick();
@@ -265,9 +291,10 @@ export class ConstellationGraph {
 
 	private hit(e: MouseEvent): NodeState | undefined {
 		const rect = this.canvas.getBoundingClientRect();
-		const x = e.clientX - rect.left, y = e.clientY - rect.top;
+		const x = e.clientX - rect.left;
+		const y = e.clientY - rect.top;
 		let best: NodeState | undefined;
-		let bestD = Infinity;
+		let bestD = Number.POSITIVE_INFINITY;
 		for (const s of this.nodes.values()) {
 			if (s.targetAlpha === 0) {
 				continue;
@@ -321,7 +348,7 @@ export class ConstellationGraph {
 		const bg = style.getPropertyValue('--vscode-editor-background').trim() || '#1e1e1e';
 		const { cx, cy, R } = this.geometry;
 		ctx.clearRect(0, 0, this.width, this.height);
-		const dimmed = (n: GraphNode) => !!this.focusGroup && n.group !== this.focusGroup;
+		const dimmed = (n: GraphNode) => Boolean(this.focusGroup) && n.group !== this.focusGroup;
 
 		// Slices: a faint wedge per group, so groups read as regions.
 		for (const s of this.slices) {
@@ -356,12 +383,20 @@ export class ConstellationGraph {
 		// Edges: lit when they touch the hovered/selected node's session.
 		const focusSession = this.nodes.get(this.hovered ?? this.selected ?? '')?.node.sessionKey;
 		for (const e of this.edges) {
-			const a = this.nodes.get(e.from), b = this.nodes.get(e.to);
+			const a = this.nodes.get(e.from);
+			const b = this.nodes.get(e.to);
 			if (!a || !b) {
 				continue;
 			}
-			const lit = !!focusSession && (a.node.sessionKey === focusSession || b.node.sessionKey === focusSession);
-			ctx.globalAlpha = Math.min(a.alpha, b.alpha) * (lit ? 0.9 : dimmed(a.node) || dimmed(b.node) ? 0.08 : 0.28);
+			const lit =
+				Boolean(focusSession) && (a.node.sessionKey === focusSession || b.node.sessionKey === focusSession);
+			let strength = 0.28;
+			if (lit) {
+				strength = 0.9;
+			} else if (dimmed(a.node) || dimmed(b.node)) {
+				strength = 0.08;
+			}
+			ctx.globalAlpha = Math.min(a.alpha, b.alpha) * strength;
 			ctx.strokeStyle = lit ? focus : muted;
 			ctx.lineWidth = lit ? 1.8 : 1;
 			ctx.setLineDash(e.kind === 'fork' ? [4, 4] : []);
@@ -376,7 +411,8 @@ export class ConstellationGraph {
 
 		// Nodes (worst first so the best sit on top). Hovered/selected get a ring; dimmed groups fade.
 		for (const s of [...this.nodes.values()].sort((a, b) => b.node.rank - a.node.rank)) {
-			const isSel = s.node.id === this.selected, isHov = s.node.id === this.hovered;
+			const isSel = s.node.id === this.selected;
+			const isHov = s.node.id === this.hovered;
 			ctx.globalAlpha = s.alpha * (dimmed(s.node) ? 0.18 : 1);
 			ctx.fillStyle = s.node.color;
 			ctx.beginPath();
@@ -396,10 +432,20 @@ export class ConstellationGraph {
 		for (const s of this.slices) {
 			const mid = (s.start + s.end) / 2;
 			const r = R + 18;
-			const x = cx + r * Math.cos(mid), y = cy + r * Math.sin(mid);
-			const text = truncate(`${s.group.label} (${s.group.count})`, Math.max(12, Math.floor(((s.end - s.start) * R) / 6.5)));
+			const x = cx + r * Math.cos(mid);
+			const y = cy + r * Math.sin(mid);
+			const text = truncate(
+				`${s.group.label} (${s.group.count})`,
+				Math.max(12, Math.floor(((s.end - s.start) * R) / 6.5)),
+			);
 			const w = ctx.measureText(text).width;
-			const left = Math.cos(mid) < -0.2 ? x - w : Math.cos(mid) > 0.2 ? x : x - w / 2;
+			// Labels on the left point leftwards, on the right rightwards, and are centred near the top and bottom.
+			let left = x - w / 2;
+			if (Math.cos(mid) < -0.2) {
+				left = x - w;
+			} else if (Math.cos(mid) > 0.2) {
+				left = x;
+			}
 			const box = { x: Math.max(2, Math.min(this.width - w - 2, left)), y: y - 8, w, h: 14 };
 			if (taken.some(t => overlaps(t, box))) {
 				continue;
@@ -433,7 +479,9 @@ export class ConstellationGraph {
 		const strongIds = new Set([this.hovered, this.selected].filter(Boolean));
 		const priority = [
 			...visible.filter(s => strongIds.has(s.node.id)),
-			...visible.filter(s => s.node.rank < 8 && !strongIds.has(s.node.id)).sort((a, b) => a.node.rank - b.node.rank),
+			...visible
+				.filter(s => s.node.rank < 8 && !strongIds.has(s.node.id))
+				.sort((a, b) => a.node.rank - b.node.rank),
 		];
 		for (const s of priority) {
 			const strong = strongIds.has(s.node.id);
@@ -458,7 +506,12 @@ export class ConstellationGraph {
 	}
 }
 
-interface Box { x: number; y: number; w: number; h: number }
+interface Box {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
 
 function overlaps(a: Box, b: Box): boolean {
 	return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -475,8 +528,9 @@ function pill(ctx: CanvasRenderingContext2D, r: Box, fill: string, stroke: strin
 }
 
 function easeOutBack(t: number): number {
-	const c1 = 1.4, c3 = c1 + 1;
-	return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+	const c1 = 1.4;
+	const c3 = c1 + 1;
+	return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
 }
 
 function truncate(s: string, n: number): string {

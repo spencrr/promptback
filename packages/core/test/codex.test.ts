@@ -16,7 +16,12 @@ function line(timestamp: string, type: string, payload: Record<string, unknown>)
 }
 
 function userItem(timestamp: string, text: string, id?: string): string {
-	return line(timestamp, 'response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text }], ...(id ? { id } : {}) });
+	return line(timestamp, 'response_item', {
+		type: 'message',
+		role: 'user',
+		content: [{ type: 'input_text', text }],
+		...(id ? { id } : {}),
+	});
 }
 
 beforeEach(() => {
@@ -37,10 +42,22 @@ beforeEach(() => {
 				git: { branch: 'feature/x', commit_hash: 'abc', repository_url: 'https://github.com/owner/PyRIT.git' },
 			}),
 			line('2026-09-17T20:26:11.000Z', 'turn_context', { model: 'gpt-6-astra', cwd: 'c:\\src\\PyRIT' }),
-			userItem('2026-09-17T20:26:12.000Z', '<environment_context>\n  <cwd>c:\\src\\PyRIT</cwd>\n</environment_context>', 'msg_env'),
+			userItem(
+				'2026-09-17T20:26:12.000Z',
+				'<environment_context>\n  <cwd>c:\\src\\PyRIT</cwd>\n</environment_context>',
+				'msg_env',
+			),
 			userItem('2026-09-17T20:26:12.000Z', 'Implement strict lockstep compatibility for the converters', 'msg_1'),
-			line('2026-09-17T20:26:20.000Z', 'response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'On it.' }] }),
-			line('2026-09-17T20:26:21.000Z', 'response_item', { type: 'function_call', name: 'shell', arguments: '{}' }),
+			line('2026-09-17T20:26:20.000Z', 'response_item', {
+				type: 'message',
+				role: 'assistant',
+				content: [{ type: 'output_text', text: 'On it.' }],
+			}),
+			line('2026-09-17T20:26:21.000Z', 'response_item', {
+				type: 'function_call',
+				name: 'shell',
+				arguments: '{}',
+			}),
 			userItem('2026-09-17T20:40:00.000Z', '<turn_aborted>\nThe user interrupted.\n</turn_aborted>'),
 			line('2026-09-17T20:41:00.000Z', 'turn_context', { model: 'gpt-6-sol' }),
 			userItem('2026-09-17T20:41:01.000Z', 'Now write the tests', 'msg_2'),
@@ -53,7 +70,12 @@ beforeEach(() => {
 	fs.writeFileSync(
 		path.join(archived, 'rollout-2026-09-18T01-00-00-11111111-2222-7333-8444-555555555555.jsonl'),
 		[
-			line('2026-09-18T01:00:00.000Z', 'session_meta', { id: '11111111-2222-7333-8444-555555555555', cwd: 'c:\\src\\PyRIT', originator: 'vscode_agent_host', source: { subagent: 'thread_spawn' } }),
+			line('2026-09-18T01:00:00.000Z', 'session_meta', {
+				id: '11111111-2222-7333-8444-555555555555',
+				cwd: 'c:\\src\\PyRIT',
+				originator: 'vscode_agent_host',
+				source: { subagent: 'thread_spawn' },
+			}),
 			userItem('2026-09-18T01:00:01.000Z', 'Review the converter module for races'),
 			'',
 		].join('\n'),
@@ -62,8 +84,15 @@ beforeEach(() => {
 	fs.writeFileSync(
 		path.join(day, 'rollout-2026-09-17T09-00-00-aaaaaaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee.jsonl'),
 		[
-			line('2026-09-17T09:00:00.000Z', 'session_meta', { id: 'aaaaaaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee', cwd: 'c:\\src\\other', originator: 'codex_exec' }),
-			line('2026-09-17T09:00:01.000Z', 'event_msg', { type: 'user_message', message: 'Run the migration script' }),
+			line('2026-09-17T09:00:00.000Z', 'session_meta', {
+				id: 'aaaaaaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee',
+				cwd: 'c:\\src\\other',
+				originator: 'codex_exec',
+			}),
+			line('2026-09-17T09:00:01.000Z', 'event_msg', {
+				type: 'user_message',
+				message: 'Run the migration script',
+			}),
 			'',
 		].join('\n'),
 	);
@@ -75,11 +104,11 @@ afterEach(() => {
 
 describe('Codex source', () => {
 	it('lists rollouts under sessions and archived_sessions', () => {
-		expect(listCodexSessionFiles(home).map(f => f.sessionId).sort()).toEqual([
-			TID,
-			'11111111-2222-7333-8444-555555555555',
-			'aaaaaaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee',
-		]);
+		expect(
+			listCodexSessionFiles(home)
+				.map(f => f.sessionId)
+				.sort((a, b) => a.localeCompare(b)),
+		).toEqual([TID, '11111111-2222-7333-8444-555555555555', 'aaaaaaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee']);
 	});
 
 	it('projects user response items to prompts with the model of their turn and the repository from git metadata', () => {
@@ -145,7 +174,12 @@ describe('Codex source', () => {
 			expect((await engine.search('races')).hits).toHaveLength(0);
 			expect((await engine.search('races from:agent')).hits.map(h => h.session.client)).toEqual(['codex/vscode']);
 			expect(sessionOpenTargets(hits[0]!.session)).toEqual([
-				{ kind: 'terminal-resume', label: 'Resume with Codex', command: `codex resume ${TID}`, cwd: 'c:\\src\\PyRIT' },
+				{
+					kind: 'terminal-resume',
+					label: 'Resume with Codex',
+					command: `codex resume ${TID}`,
+					cwd: 'c:\\src\\PyRIT',
+				},
 			]);
 		} finally {
 			await engine.close();

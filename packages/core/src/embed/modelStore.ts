@@ -1,6 +1,6 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createHash } from 'node:crypto';
 import { type LocalModelSpec, type ModelFile, modelFileUrl } from './models.js';
 
 export interface ResolveModelOptions {
@@ -75,7 +75,11 @@ export async function resolveModelDir(spec: LocalModelSpec, opts: ResolveModelOp
 	return dir;
 }
 
-export async function downloadModel(spec: LocalModelSpec, dir: string, opts: Pick<ResolveModelOptions, 'mirror' | 'onProgress' | 'fetch'>): Promise<void> {
+export async function downloadModel(
+	spec: LocalModelSpec,
+	dir: string,
+	opts: Pick<ResolveModelOptions, 'mirror' | 'onProgress' | 'fetch'>,
+): Promise<void> {
 	const staging = `${dir}.partial-${process.pid}`;
 	fs.rmSync(staging, { recursive: true, force: true });
 	try {
@@ -84,7 +88,7 @@ export async function downloadModel(spec: LocalModelSpec, dir: string, opts: Pic
 				throw new Error(`Refusing to download ${f.path} for ${spec.id}: the manifest pins no sha256`);
 			}
 			const url = modelFileUrl(spec, f, opts.mirror);
-			opts.onProgress?.(`Downloading ${spec.repo}/${f.path} (${(f.size / 1048576).toFixed(1)} MB)`);
+			opts.onProgress?.(`Downloading ${spec.repo}/${f.path} (${(f.size / 1_048_576).toFixed(1)} MB)`);
 			const res = await (opts.fetch ?? fetch)(url, { redirect: 'follow' });
 			if (!res.ok) {
 				throw new Error(`GET ${url} failed: ${res.status} ${res.statusText}`);

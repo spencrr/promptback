@@ -1,26 +1,86 @@
-import { describe, expect, it } from 'vitest';
 import type { ExploreResult, ExploreRow, Topic } from '@promptback/core/types';
-import { DEFAULT_VIEW, OTHER_COLOR, PALETTE, buildGraph, categoryColors, computeView, dayLabel, highlightTerms, histogram, repoInfo, segments } from '../webview/model.js';
+import { describe, expect, it } from 'vitest';
+import {
+	buildGraph,
+	categoryColors,
+	computeView,
+	DEFAULT_VIEW,
+	dayLabel,
+	highlightTerms,
+	histogram,
+	OTHER_COLOR,
+	PALETTE,
+	repoInfo,
+	segments,
+} from '../webview/model.js';
 
 const DAY = 86_400_000;
 let n = 0;
 function row(over: Partial<ExploreRow>): ExploreRow {
 	n++;
 	return {
-		id: `p${n}`, sessionKey: 's1', preview: `prompt ${n}`, timestamp: Date.UTC(2026, 8, 1) + n * DAY, origin: 'human', length: 10,
-		hash: `h${n}`, isAck: false, seq: n, score: 1 / n, matchedLexical: true, matchedSemantic: false, ...over,
+		id: `p${n}`,
+		sessionKey: 's1',
+		preview: `prompt ${n}`,
+		timestamp: Date.UTC(2026, 8, 1) + n * DAY,
+		origin: 'human',
+		length: 10,
+		hash: `h${n}`,
+		isAck: false,
+		seq: n,
+		score: 1 / n,
+		matchedLexical: true,
+		matchedSemantic: false,
+		...over,
 	};
 }
 
 function result(rows: ExploreRow[], freeText = 'q', topics: Topic[] = []): ExploreResult {
 	return {
-		query: freeText, freeText, mode: 'hybrid', semanticUnavailable: false, revision: '1', tookMs: 1, rows, topics,
+		query: freeText,
+		freeText,
+		mode: 'hybrid',
+		semanticUnavailable: false,
+		revision: '1',
+		tookMs: 1,
+		rows,
+		topics,
 		sessions: {
-			s1: { key: 's1', source: 'copilot', sessionId: 's1', repository: 'owner/a', client: 'github/cli', title: 'A' },
-			s2: { key: 's2', source: 'copilot', sessionId: 's2', repository: 'owner/b', client: 'vscode-agent-host', title: 'B', forkOf: 's1', forkPointSeq: 1 },
+			s1: {
+				key: 's1',
+				source: 'copilot',
+				sessionId: 's1',
+				repository: 'owner/a',
+				client: 'github/cli',
+				title: 'A',
+			},
+			s2: {
+				key: 's2',
+				source: 'copilot',
+				sessionId: 's2',
+				repository: 'owner/b',
+				client: 'vscode-agent-host',
+				title: 'B',
+				forkOf: 's1',
+				forkPointSeq: 1,
+			},
 			s3: { key: 's3', source: 'vscode-chat', sessionId: 's3', cwd: 'c:\\src\\webapp', client: 'vscode-chat' },
-			s4: { key: 's4', source: 'copilot', sessionId: 's4', cwd: 'c:\\Users\\me\\.copilot\\chats\\abc', workspaceless: true, client: 'vscode-agent-host' },
-			s5: { key: 's5', source: 'copilot', sessionId: 's5', repository: 'owner/c', repositoryInferred: true, workspaceless: true },
+			s4: {
+				key: 's4',
+				source: 'copilot',
+				sessionId: 's4',
+				cwd: 'c:\\Users\\me\\.copilot\\chats\\abc',
+				workspaceless: true,
+				client: 'vscode-agent-host',
+			},
+			s5: {
+				key: 's5',
+				source: 'copilot',
+				sessionId: 's5',
+				repository: 'owner/c',
+				repositoryInferred: true,
+				workspaceless: true,
+			},
 		},
 	};
 }
@@ -28,10 +88,10 @@ function result(rows: ExploreRow[], freeText = 'q', topics: Topic[] = []): Explo
 describe('repoInfo', () => {
 	it('distinguishes repositories, inferred repositories, folders and no folder (never a GUID)', () => {
 		const r = result([]);
-		expect(repoInfo(r.sessions['s1'])).toEqual({ label: 'owner/a', kind: 'repo' });
-		expect(repoInfo(r.sessions['s3'])).toEqual({ label: 'webapp', kind: 'folder' });
-		expect(repoInfo(r.sessions['s4'])).toEqual({ label: 'No folder', kind: 'none' });
-		expect(repoInfo(r.sessions['s5'])).toEqual({ label: 'owner/c', kind: 'inferred' });
+		expect(repoInfo(r.sessions.s1)).toEqual({ label: 'owner/a', kind: 'repo' });
+		expect(repoInfo(r.sessions.s3)).toEqual({ label: 'webapp', kind: 'folder' });
+		expect(repoInfo(r.sessions.s4)).toEqual({ label: 'No folder', kind: 'none' });
+		expect(repoInfo(r.sessions.s5)).toEqual({ label: 'owner/c', kind: 'inferred' });
 	});
 });
 
@@ -39,7 +99,13 @@ describe('grouping', () => {
 	it('inserts group headers that keep the sort order inside each group', () => {
 		const rows = [row({ sessionKey: 's1' }), row({ sessionKey: 's2' }), row({ sessionKey: 's1' })];
 		const vm = computeView(result(rows), { ...DEFAULT_VIEW, groupBy: 'repo' });
-		expect(vm.items.map(i => (i.kind === 'group' ? `[${i.label} ${i.count}]` : i.row.id))).toEqual(['[owner/a 2]', rows[0]!.id, rows[2]!.id, '[owner/b 1]', rows[1]!.id]);
+		expect(vm.items.map(i => (i.kind === 'group' ? `[${i.label} ${i.count}]` : i.row.id))).toEqual([
+			'[owner/a 2]',
+			rows[0]!.id,
+			rows[2]!.id,
+			'[owner/b 1]',
+			rows[1]!.id,
+		]);
 		expect(vm.rows.map(r => r.id)).toEqual([rows[0]!.id, rows[2]!.id, rows[1]!.id]);
 	});
 
@@ -48,12 +114,15 @@ describe('grouping', () => {
 		const rows = [row({ topic: 0 }), row({ topic: -1 })];
 		const vm = computeView(result(rows, 'q', topics), { ...DEFAULT_VIEW, groupBy: 'topic' });
 		const groups = vm.items.filter(i => i.kind === 'group');
-		expect(groups.map(g => g.kind === 'group' && [g.label, g.color])).toEqual([['Graph work', PALETTE[0]], ['Other topics', OTHER_COLOR]]);
+		expect(groups.map(g => g.kind === 'group' && [g.label, g.color])).toEqual([
+			['Graph work', PALETTE[0]],
+			['Other topics', OTHER_COLOR],
+		]);
 	});
 
 	it('labels days relative to today', () => {
 		const now = new Date(2026, 9, 6, 12).getTime();
-		expect(dayLabel(now - 3600_000, now)).toBe('Today');
+		expect(dayLabel(now - 3_600_000, now)).toBe('Today');
 		expect(dayLabel(now - DAY, now)).toBe('Yesterday');
 		expect(dayLabel(now - 30 * DAY, now)).toMatch(/2026/);
 	});
@@ -83,14 +152,21 @@ describe('computeView', () => {
 	});
 
 	it('counts each facet with every other filter applied, so selected options never hide their siblings', () => {
-		const vm = computeView(result(rows), { ...DEFAULT_VIEW, facets: { origin: ['human'], client: [], repo: ['owner/a'] } });
+		const vm = computeView(result(rows), {
+			...DEFAULT_VIEW,
+			facets: { origin: ['human'], client: [], repo: ['owner/a'] },
+		});
 		expect(vm.rows.every(r => r.sessionKey === 's1')).toBe(true);
 		expect(Object.fromEntries(vm.facets.repo.map(f => [f.value, f.count]))).toEqual({ 'owner/a': 2, 'owner/b': 1 });
 		expect(Object.fromEntries(vm.facets.origin.map(f => [f.value, f.count]))).toEqual({ human: 2 });
 	});
 
 	it('falls back to the folder name for sessions without a repository', () => {
-		const vm = computeView(result(rows), { ...DEFAULT_VIEW, facets: { origin: [], client: [], repo: [] }, hideAcks: false });
+		const vm = computeView(result(rows), {
+			...DEFAULT_VIEW,
+			facets: { origin: [], client: [], repo: [] },
+			hideAcks: false,
+		});
 		expect(vm.facets.repo.map(f => f.value)).toContain('webapp');
 	});
 
@@ -115,9 +191,15 @@ describe('helpers', () => {
 	it('extracts highlight terms and splits text into segments', () => {
 		expect(highlightTerms('tree "design doc" for a of')).toEqual(['design doc', 'tree']);
 		expect(segments('Tree view design doc', ['tree', 'design doc'])).toEqual([
-			{ text: 'Tree', hit: true }, { text: ' view ', hit: false }, { text: 'design doc', hit: true },
+			{ text: 'Tree', hit: true },
+			{ text: ' view ', hit: false },
+			{ text: 'design doc', hit: true },
 		]);
-		expect(segments('Review designs', ['view', 'design']).filter(s => s.hit).map(s => s.text)).toEqual(['design']);
+		expect(
+			segments('Review designs', ['view', 'design'])
+				.filter(s => s.hit)
+				.map(s => s.text),
+		).toEqual(['design']);
 		expect(segments('x', [])).toEqual([{ text: 'x', hit: false }]);
 	});
 
@@ -138,6 +220,9 @@ describe('helpers', () => {
 			{ from: rs[1]!.id, to: rs[2]!.id, kind: 'fork' },
 		]);
 		const byTopic = buildGraph(vm, res, 10, 'topic');
-		expect(byTopic.groups.map(g => [g.label, g.color, g.count])).toEqual([['Graph work', PALETTE[0], 2], ['Other topics', OTHER_COLOR, 1]]);
+		expect(byTopic.groups.map(g => [g.label, g.color, g.count])).toEqual([
+			['Graph work', PALETTE[0], 2],
+			['Other topics', OTHER_COLOR, 1],
+		]);
 	});
 });

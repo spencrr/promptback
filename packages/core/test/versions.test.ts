@@ -9,10 +9,15 @@ function read(rel: string): Record<string, unknown> {
 }
 
 describe('release metadata', () => {
-	const manifests = ['package.json', 'packages/core/package.json', 'packages/cli/package.json', 'packages/vscode/package.json'];
+	const manifests = [
+		'package.json',
+		'packages/core/package.json',
+		'packages/cli/package.json',
+		'packages/vscode/package.json',
+	];
 
 	it('keeps every package and the MCP server manifest on one version', () => {
-		const versions = new Set(manifests.map(m => read(m)['version']));
+		const versions = new Set(manifests.map(m => read(m).version));
 		const server = read('packages/cli/server.json') as { version: string; packages: { version: string }[] };
 		versions.add(server.version);
 		for (const p of server.packages) {
@@ -32,7 +37,7 @@ describe('release metadata', () => {
 
 	it('declares a license in every manifest and ships the LICENSE file with each artifact', () => {
 		for (const m of manifests) {
-			expect(read(m)['license'], m).toBe('MIT');
+			expect(read(m).license, m).toBe('MIT');
 		}
 		for (const dir of ['', 'packages/cli', 'packages/vscode']) {
 			expect(fs.existsSync(path.join(root, dir, 'LICENSE')), `${dir}/LICENSE`).toBe(true);

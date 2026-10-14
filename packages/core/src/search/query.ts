@@ -19,11 +19,40 @@ export interface ParsedQuery {
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-const STOPWORDS = new Set(('a an and are as at be but by can could did do does for from had has have how i if in into is it its me my of on or our '
-	+ 'so that the their them then there these this those to was we were what when where which who why will with would you your about '
-	+ 'should just like want need get make use using please let lets also any some all not no yes ok').split(' '));
+const STOPWORDS = new Set(
+	(
+		'a an and are as at be but by can could did do does for from had has have how i if in into is it its me my of on or our ' +
+		'so that the their them then there these this those to was we were what when where which who why will with would you your about ' +
+		'should just like want need get make use using please let lets also any some all not no yes ok'
+	).split(' '),
+);
 
-const KEYS = new Set(['repo', 'branch', 'cwd', 'path', 'after', 'before', 'on', 'during', 'from', 'src', 'source', 'client', 'session', 'model', 'mode', 'sort', 'is']);
+/** `mode:` values by prefix: `lex`/`lexical`, `sem`/`semantic`, `hybrid`. */
+const MODES: readonly (readonly [prefix: string, mode: SearchMode])[] = [
+	['lex', 'lexical'],
+	['sem', 'semantic'],
+	['hybrid', 'hybrid'],
+];
+
+const KEYS = new Set([
+	'repo',
+	'branch',
+	'cwd',
+	'path',
+	'after',
+	'before',
+	'on',
+	'during',
+	'from',
+	'src',
+	'source',
+	'client',
+	'session',
+	'model',
+	'mode',
+	'sort',
+	'is',
+]);
 
 /** Mutable parse state that operators update besides the filters. */
 interface OperatorContext {
@@ -61,7 +90,16 @@ export function parseQuery(raw: string, now = Date.now()): ParsedQuery {
 	const f: Mutable<SearchFilters> = {};
 	let mode: SearchMode | undefined;
 	let sort: 'relevance' | 'recent' = 'relevance';
-	const ctx: OperatorContext = { now, setMode: m => (mode = m), setSort: s => (sort = s), aliases: sourceAliases() };
+	const ctx: OperatorContext = {
+		now,
+		setMode: m => {
+			mode = m;
+		},
+		setSort: s => {
+			sort = s;
+		},
+		aliases: sourceAliases(),
+	};
 
 	for (const tok of splitQuery(raw)) {
 		const neg = tok.startsWith('-') && tok.length > 1;
@@ -182,7 +220,7 @@ function applyOperator(f: Mutable<SearchFilters>, key: string, value: string, ct
 		}
 		case 'mode': {
 			const v = value.toLowerCase();
-			const m: SearchMode | undefined = v.startsWith('lex') ? 'lexical' : v.startsWith('sem') ? 'semantic' : v === 'hybrid' ? 'hybrid' : undefined;
+			const m = MODES.find(([prefix]) => v.startsWith(prefix))?.[1];
 			if (!m) {
 				return false;
 			}
@@ -246,7 +284,8 @@ export function isIdentifierish(q: ParsedQuery): boolean {
 	return q.phrases.length > 0 || q.rawTokens.some(t => /[0-9]|[_./\\#-]|[a-z][A-Z]/.test(t));
 }
 
-const ACK_RE = /^(?:continue|go on|go ahead|proceed|yes|yep|yeah|y|ok|okay|k|sure|thanks|thank you|ty|do it|done|next|keep going|lgtm|sounds good|great|perfect|nice|cool)[\s.!]*$/i;
+const ACK_RE =
+	/^(?:continue|go on|go ahead|proceed|yes|yep|yeah|y|ok|okay|k|sure|thanks|thank you|ty|do it|done|next|keep going|lgtm|sounds good|great|perfect|nice|cool)[\s.!]*$/i;
 
 /** Trivial acknowledgements are hidden unless `is:ack` is given. */
 export function isAckText(text: string): boolean {

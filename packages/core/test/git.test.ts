@@ -2,7 +2,13 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { dominantRoot, isWorkspaceless, listCopilotSessions, readCopilotEvents, readCopilotSessionInfo } from '../src/sources/copilot.js';
+import {
+	dominantRoot,
+	isWorkspaceless,
+	listCopilotSessions,
+	readCopilotEvents,
+	readCopilotSessionInfo,
+} from '../src/sources/copilot.js';
 import { findGitRoot, gitRootsInText, parseRemote, repoName } from '../src/util/git.js';
 
 let tmp: string;
@@ -16,7 +22,12 @@ function makeRepo(name: string, remote?: string): string {
 	fs.mkdirSync(path.join(root, '.git'), { recursive: true });
 	fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
 	fs.writeFileSync(path.join(root, 'lib', 'a.ts'), '');
-	fs.writeFileSync(path.join(root, '.git', 'config'), remote ? `[core]\n\tbare = false\n[remote "origin"]\n\turl = ${remote}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n` : '[core]\n');
+	fs.writeFileSync(
+		path.join(root, '.git', 'config'),
+		remote
+			? `[core]\n\tbare = false\n[remote "origin"]\n\turl = ${remote}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n`
+			: '[core]\n',
+	);
 	return root;
 }
 
@@ -24,7 +35,9 @@ describe('git helpers', () => {
 	it('parses GitHub, SSH and Azure DevOps remotes', () => {
 		expect(parseRemote('https://github.com/microsoft/vscode.git')).toBe('microsoft/vscode');
 		expect(parseRemote('git@github.com:spencrr/PyRIT.git')).toBe('spencrr/PyRIT');
-		expect(parseRemote('https://dev.azure.com/org/Some%20Project/_git/repo-internal/')).toBe('Some Project/repo-internal');
+		expect(parseRemote('https://dev.azure.com/org/Some%20Project/_git/repo-internal/')).toBe(
+			'Some Project/repo-internal',
+		);
 		expect(parseRemote(undefined)).toBeUndefined();
 	});
 
@@ -34,7 +47,13 @@ describe('git helpers', () => {
 		expect(findGitRoot(path.join(a, 'lib'))).toBe(a);
 		expect(repoName(a)).toBe('owner/alpha');
 		expect(repoName(b)).toBe('beta');
-		expect(gitRootsInText(`Get-Content ${path.join(a, 'lib', 'a.ts')}; cd ${path.join(b, 'missing.txt')}`, tmp, () => false)).toEqual([a, b]);
+		expect(
+			gitRootsInText(
+				`Get-Content ${path.join(a, 'lib', 'a.ts')}; cd ${path.join(b, 'missing.txt')}`,
+				tmp,
+				() => false,
+			),
+		).toEqual([a, b]);
 		expect(gitRootsInText('Resolve-Path "$HOME\\src\\alpha\\lib"', tmp, () => false)).toEqual([a]);
 	});
 
@@ -55,12 +74,23 @@ describe('git helpers', () => {
 		const dir = path.join(home, 'session-state', sid);
 		fs.mkdirSync(dir, { recursive: true });
 		const cwd = path.join(home, 'chats', 'c1');
-		const ev = (type: string, data: object, id: string) => JSON.stringify({ type, data, id, timestamp: '2026-09-01T00:00:00Z' }) + '\n';
+		const ev = (type: string, data: object, id: string) =>
+			`${JSON.stringify({ type, data, id, timestamp: '2026-09-01T00:00:00Z' })}\n`;
 		fs.writeFileSync(path.join(dir, 'workspace.yaml'), `id: ${sid}\ncwd: ${cwd}\nclient_name: vscode-agent-host\n`);
-		fs.writeFileSync(path.join(dir, 'events.jsonl'),
-			ev('session.start', { context: { cwd } }, 'e0')
-			+ ev('user.message', { content: 'fix the bug' }, 'e1')
-			+ [1, 2, 3].map(i => ev('tool.execution_start', { toolName: 'view', arguments: { path: path.join(repo, 'lib', 'a.ts') } }, `t${i}`)).join(''));
+		fs.writeFileSync(
+			path.join(dir, 'events.jsonl'),
+			ev('session.start', { context: { cwd } }, 'e0') +
+				ev('user.message', { content: 'fix the bug' }, 'e1') +
+				[1, 2, 3]
+					.map(i =>
+						ev(
+							'tool.execution_start',
+							{ toolName: 'view', arguments: { path: path.join(repo, 'lib', 'a.ts') } },
+							`t${i}`,
+						),
+					)
+					.join(''),
+		);
 		const [s] = listCopilotSessions(home);
 		const r = readCopilotEvents(s!, undefined, home)!;
 		expect(r.state.repoHits).toEqual({ [repo]: 3 });

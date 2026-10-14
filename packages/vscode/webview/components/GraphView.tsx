@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { ExploreResult } from '@promptback/core/types';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ConstellationGraph } from '../graph.js';
-import { type ColorBy, type ViewModel, buildGraph } from '../model.js';
+import { buildGraph, type ColorBy, type ViewModel } from '../model.js';
 import { Icon } from './common.js';
 
 const NODE_LIMIT = 60;
@@ -14,7 +14,17 @@ const EXPLAIN: Record<ColorBy, string> = {
 };
 
 /** Canvas graph of the top results, linked to the table selection and hover. */
-export function GraphView({ vm, result, colorBy, selectedId, hoveredId, select, hover, reducedMotion, onActivate }: {
+export function GraphView({
+	vm,
+	result,
+	colorBy,
+	selectedId,
+	hoveredId,
+	select,
+	hover,
+	reducedMotion,
+	onActivate,
+}: {
 	vm: ViewModel;
 	result: ExploreResult;
 	colorBy: ColorBy;
@@ -45,7 +55,7 @@ export function GraphView({ vm, result, colorBy, selectedId, hoveredId, select, 
 
 	useEffect(() => {
 		graphRef.current?.setData(result.freeText || result.query, model.nodes, model.edges, model.groups);
-	}, [model, reducedMotion]);
+	}, [model, result.freeText, result.query, reducedMotion]);
 	useEffect(() => graphRef.current?.setSelected(selectedId), [selectedId, model]);
 	useEffect(() => graphRef.current?.setHovered(hoveredId), [hoveredId]);
 	useEffect(() => {
@@ -56,24 +66,38 @@ export function GraphView({ vm, result, colorBy, selectedId, hoveredId, select, 
 	const shown = Math.min(NODE_LIMIT, vm.rows.length);
 	return (
 		<div class="graph">
-			<canvas ref={canvasRef} role="img" aria-label="Constellation of matching prompts: closer to the centre means more relevant" />
+			<canvas
+				ref={canvasRef}
+				role="img"
+				aria-label="Constellation of matching prompts: closer to the centre means more relevant"
+			/>
 			<div class="graph-help">
 				<div>
 					<Icon name="info" />
-					{result.freeText ? 'Closer to the centre = more relevant.' : 'Closer to the centre = more recent.'} {EXPLAIN[colorBy]} Inside a slice, older → newer runs clockwise.
+					{result.freeText ? 'Closer to the centre = more relevant.' : 'Closer to the centre = more recent.'}{' '}
+					{EXPLAIN[colorBy]} Inside a slice, older → newer runs clockwise.
 				</div>
-				<div class="muted">Lines join prompts of one session; dashed = forked from. Showing the top {shown} of {vm.rows.length}.</div>
+				<div class="muted">
+					Lines join prompts of one session; dashed = forked from. Showing the top {shown} of {vm.rows.length}
+					.
+				</div>
 			</div>
-			<div class="legend" role="list" aria-label="Groups (click to highlight)">
+			<ul class="legend" aria-label="Groups (click to highlight)">
 				{model.groups.map(g => (
-					<button key={g.key} role="listitem" class={`legend-item ${focusGroup === g.key ? 'on' : ''} ${focusGroup && focusGroup !== g.key ? 'dim' : ''}`}
-						title={`${g.label} — click to highlight`} onClick={() => setFocusGroup(f => (f === g.key ? undefined : g.key))}>
-						<i style={{ background: g.color }} />
-						<span class="text">{g.label}</span>
-						<span class="muted">{g.count}</span>
-					</button>
+					<li key={g.key}>
+						<button
+							type="button"
+							class={`legend-item ${focusGroup === g.key ? 'on' : ''} ${focusGroup && focusGroup !== g.key ? 'dim' : ''}`}
+							title={`${g.label} — click to highlight`}
+							onClick={() => setFocusGroup(f => (f === g.key ? undefined : g.key))}
+						>
+							<i style={{ background: g.color }} />
+							<span class="text">{g.label}</span>
+							<span class="muted">{g.count}</span>
+						</button>
+					</li>
 				))}
-			</div>
+			</ul>
 		</div>
 	);
 }

@@ -53,15 +53,26 @@ export function clusterTopics(
 
 	// Relabel by size (largest first); fold tiny clusters into Other (-1).
 	const sizes = new Map<number, number>();
-	best.labels.forEach(l => sizes.set(l, (sizes.get(l) ?? 0) + 1));
-	const order = [...sizes].filter(([, s]) => s >= MIN_CLUSTER).sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([l]) => l);
+	for (const l of best.labels) {
+		sizes.set(l, (sizes.get(l) ?? 0) + 1);
+	}
+	const order = [...sizes]
+		.filter(([, s]) => s >= MIN_CLUSTER)
+		.sort((a, b) => b[1] - a[1] || a[0] - b[0])
+		.map(([l]) => l);
 	const remap = new Map(order.map((l, i) => [l, i]));
 	const labels = best.labels.map(l => remap.get(l) ?? -1);
 
-	const terms = labelTerms(texts, labels, order.length, new Set((options.exclude ?? []).map(t => t.toLowerCase())), options.vocabulary);
+	const terms = labelTerms(texts, labels, order.length, {
+		exclude: new Set((options.exclude ?? []).map(t => t.toLowerCase())),
+		vocab: options.vocabulary,
+	});
 	const topics: Topic[] = order.map((_, id) => {
 		const members = labels.flatMap((l, i) => (l === id ? [i] : []));
-		const medoid = members.reduce((best, i) => (meanSim(sim, i, members, n) > meanSim(sim, best, members, n) ? i : best), members[0]!);
+		const medoid = members.reduce(
+			(central, i) => (meanSim(sim, i, members, n) > meanSim(sim, central, members, n) ? i : central),
+			members[0]!,
+		);
 		return {
 			id,
 			terms: terms[id]!,
@@ -83,7 +94,11 @@ function meanSim(sim: Float32Array, i: number, members: readonly number[], n: nu
 
 /** The first meaningful line of a prompt, shortened: the topic's most central prompt names it best. */
 function headline(text: string): string {
-	const line = text.split(/\r?\n/).map(l => l.replace(/^[#>*\-\s`]+/, '').trim()).find(l => l.length >= 8) ?? '';
+	const line =
+		text
+			.split(/\r?\n/)
+			.map(l => l.replace(/^[#>*\-\s`]+/, '').trim())
+			.find(l => l.length >= 8) ?? '';
 	return line.length > 48 ? `${line.slice(0, 47).replace(/\s+\S*$/, '')}…` : line;
 }
 
@@ -101,7 +116,9 @@ function similarityMatrix(v: readonly Float32Array[]): Float32Array {
 	for (let i = 0; i < n; i++) {
 		m[i * n + i] = 1;
 		for (let j = i + 1; j < n; j++) {
-			m[i * n + j] = m[j * n + i] = dot(v[i]!, v[j]!);
+			const s = dot(v[i]!, v[j]!);
+			m[i * n + j] = s;
+			m[j * n + i] = s;
 		}
 	}
 	return m;
@@ -120,12 +137,16 @@ function kmeans(v: readonly Float32Array[], k: number): number[] {
 			}
 		}
 		centres.push(Float32Array.from(v[far]!));
-		v.forEach((x, i) => (nearest[i] = Math.max(nearest[i]!, dot(x, centres[centres.length - 1]!))));
+		const centre = centres.at(-1)!;
+		for (const [i, x] of v.entries()) {
+			nearest[i] = Math.max(nearest[i]!, dot(x, centre));
+		}
 	}
 	let labels = new Array<number>(v.length).fill(0);
 	for (let iter = 0; iter < ITERATIONS; iter++) {
 		const next = v.map(x => {
-			let bestC = 0, bestS = -Infinity;
+			let bestC = 0;
+			let bestS = Number.NEGATIVE_INFINITY;
 			centres.forEach((c, ci) => {
 				const s = dot(x, c);
 				if (s > bestS) {
@@ -178,18 +199,23 @@ function silhouette(sim: Float32Array, labels: readonly number[], k: number): nu
 			continue;
 		}
 		const a = sums[own]! / counts[own]!;
-		let b = Infinity;
+		let b = Number.POSITIVE_INFINITY;
 		for (let c = 0; c < k; c++) {
 			if (c !== own && counts[c]) {
 				b = Math.min(b, sums[c]! / counts[c]!);
 			}
 		}
-		total += b === Infinity ? 0 : (b - a) / Math.max(a, b);
+		total += b === Number.POSITIVE_INFINITY ? 0 : (b - a) / Math.max(a, b);
 	}
 	return total / n;
 }
 
-function labelTerms(texts: readonly string[], labels: readonly number[], k: number, exclude: ReadonlySet<string>, vocab?: GlobalVocabulary): string[][] {
+function labelTerms(
+	texts: readonly string[],
+	labels: readonly number[],
+	k: number,
+	{ exclude, vocab }: { readonly exclude: ReadonlySet<string>; readonly vocab?: GlobalVocabulary },
+): string[][] {
 	const df = Array.from({ length: k }, () => new Map<string, number>());
 	const dfAll = new Map<string, number>();
 	const sizes = new Array<number>(k).fill(0);
@@ -207,24 +233,29 @@ function labelTerms(texts: readonly string[], labels: readonly number[], k: numb
 		}
 	});
 	const docs = vocab?.docs ?? texts.length;
-	return df.map((m, c) => [...m]
-		// A label word must be used by several of the topic's prompts and mostly within this topic.
-		.filter(([t, f]) => f >= Math.min(2, sizes[c]!) && (k === 1 || f / dfAll.get(t)! >= 0.5))
-		.map(([t, f]) => {
-			const idf = Math.log((docs + 1) / ((vocab?.df.get(t) ?? dfAll.get(t)!) + 1));
-			return [t, (f / sizes[c]!) * idf * (f / dfAll.get(t)!)] as const;
-		})
-		.filter(([, s]) => s > 0)
-		.sort((a, b) => b[1] - a[1])
-		.slice(0, 5)
-		.map(([t]) => t));
+	return df.map((m, c) =>
+		[...m]
+			// A label word must be used by several of the topic's prompts and mostly within this topic.
+			.filter(([t, f]) => f >= Math.min(2, sizes[c]!) && (k === 1 || f / dfAll.get(t)! >= 0.5))
+			.map(([t, f]) => {
+				const idf = Math.log((docs + 1) / ((vocab?.df.get(t) ?? dfAll.get(t)!) + 1));
+				return [t, (f / sizes[c]!) * idf * (f / dfAll.get(t)!)] as const;
+			})
+			.filter(([, s]) => s > 0)
+			.sort((a, b) => b[1] - a[1])
+			.slice(0, 5)
+			.map(([t]) => t),
+	);
 }
 
-const NOISE = /^(?:https?|www|com|src|users?|true|false|null|undefined|here|there|below|above|following|particular|necessary|great|simplest|clean|original|actually|really|currently|already|instead|maybe|probably|something|anything|everything|thing|things|way|ways|lot|bit|kind|sure|okay|thanks|thank|good|better|best|nice|new|old|first|last|next|done|still|well|much|many|more|most|less|least|each|every|both|either|neither|etc|via|per|one|two|three)$/;
+const NOISE =
+	/^(?:https?|www|com|src|users?|true|false|null|undefined|here|there|below|above|following|particular|necessary|great|simplest|clean|original|actually|really|currently|already|instead|maybe|probably|something|anything|everything|thing|things|way|ways|lot|bit|kind|sure|okay|thanks|thank|good|better|best|nice|new|old|first|last|next|done|still|well|much|many|more|most|less|least|each|every|both|either|neither|etc|via|per|one|two|three)$/;
 
 /** Words considered for topic labels: lowercase alphabetic identifiers, no stopwords, hex ids or noise. */
 export function topicTokens(text: string): string[] {
-	return contentTokens(text.slice(0, 4000)).filter(t => t.length >= 4 && t.length <= 20 && /^[a-z][a-z_]*[a-z]$/.test(t) && !NOISE.test(t));
+	return contentTokens(text.slice(0, 4000)).filter(
+		t => t.length >= 4 && t.length <= 20 && /^[a-z][a-z_]*[a-z]$/.test(t) && !NOISE.test(t),
+	);
 }
 
 /** Builds the corpus-wide vocabulary used to down-weight words that are common in all of your prompts. */

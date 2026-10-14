@@ -1,4 +1,12 @@
-import type { ExploreResult, IndexStatus, PromptRecord, SessionInfo, SessionOpenTarget, SourceCatalog, SyncProgress } from '@promptback/core/types';
+import type {
+	ExploreResult,
+	IndexStatus,
+	PromptRecord,
+	SessionInfo,
+	SessionOpenTarget,
+	SourceCatalog,
+	SyncProgress,
+} from '@promptback/core/types';
 
 export type ExplorerView = 'table' | 'graph';
 
@@ -20,7 +28,12 @@ export interface IndexSettings {
 
 /** What the Index panel can offer: the registered providers and local models. */
 export interface IndexChoices {
-	readonly providers: readonly { readonly id: string; readonly label: string; readonly description: string; readonly local: boolean }[];
+	readonly providers: readonly {
+		readonly id: string;
+		readonly label: string;
+		readonly description: string;
+		readonly local: boolean;
+	}[];
 	readonly models: readonly { readonly id: string; readonly label: string; readonly detail: string }[];
 }
 
@@ -35,28 +48,32 @@ export interface OpenRequest {
 }
 
 export type ToWebview =
-	| ({ readonly type: 'init'; readonly reducedMotion: boolean; readonly catalog: SourceCatalog } & Partial<OpenRequest>)
+	| ({
+			readonly type: 'init';
+			readonly reducedMotion: boolean;
+			readonly catalog: SourceCatalog;
+	  } & Partial<OpenRequest>)
 	| { readonly type: 'result'; readonly requestId: number; readonly result: ExploreResult }
 	| { readonly type: 'error'; readonly requestId: number; readonly message: string }
 	| {
-		readonly type: 'detail';
-		readonly requestId: number;
-		readonly prompt: PromptRecord;
-		readonly session?: SessionInfo;
-		/** Every prompt of the session (text truncated) for the context strip. */
-		readonly sessionPrompts: readonly Pick<PromptRecord, 'id' | 'seq' | 'timestamp' | 'origin' | 'text'>[];
-		readonly openTargets: readonly SessionOpenTarget[];
-	}
+			readonly type: 'detail';
+			readonly requestId: number;
+			readonly prompt: PromptRecord;
+			readonly session?: SessionInfo;
+			/** Every prompt of the session (text truncated) for the context strip. */
+			readonly sessionPrompts: readonly Pick<PromptRecord, 'id' | 'seq' | 'timestamp' | 'origin' | 'text'>[];
+			readonly openTargets: readonly SessionOpenTarget[];
+	  }
 	/** The index changed (new prompts / embeddings); the webview re-runs its query in place. */
 	| { readonly type: 'indexChanged' }
 	| ({ readonly type: 'open' } & OpenRequest)
 	| {
-		readonly type: 'indexStatus';
-		readonly status?: IndexStatus & { syncing: boolean };
-		readonly settings: IndexSettings;
-		readonly choices: IndexChoices;
-		readonly error?: string;
-	}
+			readonly type: 'indexStatus';
+			readonly status?: IndexStatus & { syncing: boolean };
+			readonly settings: IndexSettings;
+			readonly choices: IndexChoices;
+			readonly error?: string;
+	  }
 	| { readonly type: 'progress'; readonly progress: SyncProgress };
 
 export type FromWebview =

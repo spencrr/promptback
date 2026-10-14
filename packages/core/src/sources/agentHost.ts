@@ -44,9 +44,11 @@ export function listAgentHostDbs(productRoot: string): { agentHostSessionId: str
 export function readAgentHostDb(dbPath: string): Omit<AgentHostDbState, 'mtimeMs' | 'size'> {
 	const db = new DatabaseSync(dbPath, { readOnly: true });
 	try {
-		const rows = db.prepare(
-			`select key, value from session_metadata where key in ('defaultChatProviderData', 'peerChats', 'customTitle')`
-		).all() as { key: string; value: string }[];
+		const rows = db
+			.prepare(
+				`select key, value from session_metadata where key in ('defaultChatProviderData', 'peerChats', 'customTitle')`,
+			)
+			.all() as { key: string; value: string }[];
 		const meta = new Map(rows.map(r => [r.key, r.value]));
 		const links: { sdkSessionId: string; chatId?: string }[] = [];
 		const main = sdkId(meta.get('defaultChatProviderData'));

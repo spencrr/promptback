@@ -4,11 +4,25 @@ import { clusterTopics } from '../src/search/topics.js';
 
 /** Points around three well-separated directions, with small deterministic jitter. */
 function blobs(): { vectors: Float32Array[]; texts: string[]; truth: number[] } {
-	const centres = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]];
-	const words = [['parser', 'tokenizer', 'grammar'], ['graph', 'layout', 'canvas'], ['pipeline', 'deploy', 'ci']];
-	const vectors: Float32Array[] = [], texts: string[] = [], truth: number[] = [];
+	const centres = [
+		[1, 0, 0, 0],
+		[0, 1, 0, 0],
+		[0, 0, 1, 0],
+	];
+	const words = [
+		['parser', 'tokenizer', 'grammar'],
+		['graph', 'layout', 'canvas'],
+		['pipeline', 'deploy', 'ci'],
+	];
+	const vectors: Float32Array[] = [];
+	const texts: string[] = [];
+	const truth: number[] = [];
 	let seed = 7;
-	const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.3;
+	// Park–Miller LCG: deterministic jitter so the fixture is reproducible.
+	const rnd = () => {
+		seed = (seed * 16_807) % 2_147_483_647;
+		return (seed / 2_147_483_647 - 0.5) * 0.3;
+	};
 	centres.forEach((c, k) => {
 		for (let i = 0; i < 5; i++) {
 			vectors.push(l2normalize(Float32Array.from(c.map(x => x + rnd()))));
@@ -29,7 +43,9 @@ describe('clusterTopics', () => {
 		expect(r.topics).toHaveLength(3);
 		expect(r.assignment[15]).toBe(-1);
 		for (let k = 0; k < 3; k++) {
-			const ids = new Set(truth.map((t, i) => (t === k ? r.assignment[i] : undefined)).filter(x => x !== undefined));
+			const ids = new Set(
+				truth.map((t, i) => (t === k ? r.assignment[i] : undefined)).filter(x => x !== undefined),
+			);
 			expect(ids.size).toBe(1);
 		}
 		const labelOf = (i: number) => r.topics.find(t => t.id === r.assignment[i])!.terms;

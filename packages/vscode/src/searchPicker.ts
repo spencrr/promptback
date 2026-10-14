@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
 import type { PromptOrigin, SearchHit, SearchResult } from '@promptback/core';
+import * as vscode from 'vscode';
 import { copyPrompt, insertIntoChat, openSession, previewPrompt } from './actions.js';
 import type { HostClient } from './hostClient.js';
 import { clientIcon } from './sidebar.js';
@@ -9,9 +9,18 @@ interface HitItem extends vscode.QuickPickItem {
 }
 
 const BTN_COPY: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('copy'), tooltip: 'Copy prompt' };
-const BTN_INSERT: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('comment'), tooltip: 'Insert into chat input' };
-const BTN_PREVIEW: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('open-preview'), tooltip: 'Show full prompt' };
-const BTN_OPEN: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('link-external'), tooltip: 'Open / resume session' };
+const BTN_INSERT: vscode.QuickInputButton = {
+	iconPath: new vscode.ThemeIcon('comment'),
+	tooltip: 'Insert into chat input',
+};
+const BTN_PREVIEW: vscode.QuickInputButton = {
+	iconPath: new vscode.ThemeIcon('open-preview'),
+	tooltip: 'Show full prompt',
+};
+const BTN_OPEN: vscode.QuickInputButton = {
+	iconPath: new vscode.ThemeIcon('link-external'),
+	tooltip: 'Open / resume session',
+};
 
 const ALL_ORIGINS: PromptOrigin[] = ['human', 'agent', 'skill', 'system', 'autopilot'];
 
@@ -22,10 +31,10 @@ export interface SearchPickerOptions {
 	readonly onOpenExplorer?: (query: string) => unknown;
 }
 
-export async function showSearchPicker(host: HostClient, opts: SearchPickerOptions = {}): Promise<void> {
+export function showSearchPicker(host: HostClient, opts: SearchPickerOptions = {}): void {
 	const config = vscode.workspace.getConfiguration('promptback');
 	const limit = config.get<number>('maxResults', 50);
-	let includeAll = !!opts.includeAllOrigins;
+	let includeAll = Boolean(opts.includeAllOrigins);
 
 	const qp = vscode.window.createQuickPick<HitItem>();
 	qp.matchOnDescription = false;
@@ -38,10 +47,15 @@ export async function showSearchPicker(host: HostClient, opts: SearchPickerOptio
 
 	const btnScope = (): vscode.QuickInputButton => ({
 		iconPath: new vscode.ThemeIcon(includeAll ? 'filter-filled' : 'filter'),
-		tooltip: includeAll ? 'Showing all messages (agents, skills, system) — click for only your prompts' : 'Showing only your prompts — click to include agent/skill/system messages',
+		tooltip: includeAll
+			? 'Showing all messages (agents, skills, system) — click for only your prompts'
+			: 'Showing only your prompts — click to include agent/skill/system messages',
 	});
 	const btnRefresh: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('refresh'), tooltip: 'Re-scan now' };
-	const btnExplorer: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('table'), tooltip: 'Open in Prompt Explorer (full screen, filters, graph)' };
+	const btnExplorer: vscode.QuickInputButton = {
+		iconPath: new vscode.ThemeIcon('table'),
+		tooltip: 'Open in Prompt Explorer (full screen, filters, graph)',
+	};
 	const buttons = () => [btnScope(), ...(opts.onOpenExplorer ? [btnExplorer] : []), btnRefresh];
 	qp.buttons = buttons();
 
@@ -63,7 +77,13 @@ export async function showSearchPicker(host: HostClient, opts: SearchPickerOptio
 			qp.title = titleFor(res, includeAll);
 		} catch (e) {
 			if (mySeq === seq) {
-				qp.items = [{ label: '$(error) Search failed', detail: e instanceof Error ? e.message : String(e), alwaysShow: true }];
+				qp.items = [
+					{
+						label: '$(error) Search failed',
+						detail: e instanceof Error ? e.message : String(e),
+						alwaysShow: true,
+					},
+				];
 			}
 		} finally {
 			if (mySeq === seq) {
@@ -80,7 +100,10 @@ export async function showSearchPicker(host: HostClient, opts: SearchPickerOptio
 		qp.onDidChangeValue(v => schedule(v)),
 		qp.onDidTriggerButton(b => {
 			if (b === btnRefresh) {
-				void host.request('sync', { embed: true }).then(() => schedule(qp.value, 0), () => undefined);
+				void host.request('sync', { embed: true }).then(
+					() => schedule(qp.value, 0),
+					() => undefined,
+				);
 				vscode.window.setStatusBarMessage('$(sync~spin) Re-scanning prompt history…', 3000);
 				return;
 			}
@@ -112,7 +135,7 @@ export async function showSearchPicker(host: HostClient, opts: SearchPickerOptio
 				await openSession(hit.session);
 			}
 		}),
-		qp.onDidAccept(async () => {
+		qp.onDidAccept(() => {
 			const hit = qp.selectedItems[0]?.hit ?? qp.activeItems[0]?.hit;
 			if (!hit) {
 				return;
@@ -132,7 +155,9 @@ export async function showSearchPicker(host: HostClient, opts: SearchPickerOptio
 		qp.onDidHide(() => {
 			clearTimeout(timer);
 			seq++;
-			disposables.forEach(d => d.dispose());
+			for (const d of disposables) {
+				d.dispose();
+			}
 			qp.dispose();
 		}),
 	];
@@ -164,19 +189,32 @@ function titleFor(res: SearchResult, includeAll: boolean): string {
 
 function toItems(res: SearchResult): HitItem[] {
 	if (res.hits.length === 0) {
-		return [{ label: res.query.trim() ? '$(info) No matching prompts' : '$(info) No prompts indexed yet', alwaysShow: true, detail: 'Try fewer words, remove filters, or run "Promptback: Re-scan and Index Now".' }];
+		return [
+			{
+				label: res.query.trim() ? '$(info) No matching prompts' : '$(info) No prompts indexed yet',
+				alwaysShow: true,
+				detail: 'Try fewer words, remove filters, or run "Promptback: Re-scan and Index Now".',
+			},
+		];
 	}
 	return res.hits.map(hit => {
 		const s = hit.session;
 		const text = hit.prompt.text.trim();
 		const firstLine = oneLine(text.split(/\r?\n/, 1)[0] ?? '', 140);
-		const where = [s.title && s.title !== firstLine ? oneLine(s.title, 50) : undefined, shortRepo(s.repository ?? s.cwd), relativeTime(hit.prompt.timestamp)]
-			.filter(Boolean).join(' · ');
+		const where = [
+			s.title && s.title !== firstLine ? oneLine(s.title, 50) : undefined,
+			shortRepo(s.repository ?? s.cwd),
+			relativeTime(hit.prompt.timestamp),
+		]
+			.filter(Boolean)
+			.join(' · ');
 		const extras = [
-			hit.duplicates.length ? `×${hit.duplicates.length + 1}` : undefined,
-			hit.prompt.origin !== 'human' ? hit.prompt.origin : undefined,
+			hit.duplicates.length > 0 ? `×${hit.duplicates.length + 1}` : undefined,
+			hit.prompt.origin === 'human' ? undefined : hit.prompt.origin,
 			hit.moreInSession ? `+${hit.moreInSession} more in this session` : undefined,
-		].filter(Boolean).join(' · ');
+		]
+			.filter(Boolean)
+			.join(' · ');
 		return {
 			label: `${iconFor(s.client)} ${firstLine}`,
 			description: where,
@@ -222,7 +260,13 @@ function relativeTime(ts: number): string {
 	if (s < 60) {
 		return 'just now';
 	}
-	const units: [number, string][] = [[60, 'm'], [3600, 'h'], [86400, 'd'], [86400 * 30, 'mo'], [86400 * 365, 'y']];
+	const units: [number, string][] = [
+		[60, 'm'],
+		[3600, 'h'],
+		[86_400, 'd'],
+		[86_400 * 30, 'mo'],
+		[86_400 * 365, 'y'],
+	];
 	let out = `${Math.floor(s / 60)}m ago`;
 	for (const [sec, u] of units) {
 		if (s >= sec) {

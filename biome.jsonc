@@ -87,8 +87,11 @@
         "noUndeclaredDependencies": "off",
         // tsc resolves every import; Biome cannot resolve `node:sqlite` or the MCP SDK's exports-map subpaths.
         "noUnresolvedImports": "off",
+        // Listing a value only to re-run an effect when it changes is an intentional Preact idiom; missing
+        // dependencies (stale closures) are the bugs worth reporting.
+        "useExhaustiveDependencies": { "level": "on", "options": { "reportUnnecessaryDependencies": false } },
         // NodeNext: `.ts` sources are imported with the `.js` suffix they compile to.
-        "useImportExtensions": { "level": "on", "options": { "forceJsExtensions": true } }
+        "useImportExtensions": { "level": "on", "options": { "extensionMappings": { "ts": "js", "tsx": "js" } } }
       },
       "performance": {
         "preset": "all",
