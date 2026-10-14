@@ -1,7 +1,9 @@
 // biome-ignore-all lint/suspicious/noConsole: the test runner reports on stdout.
 // Launches the locally installed VS Code with an isolated profile, loads this extension from source (dist/) and
 // runs ./suite.cjs inside the extension host. The prompt index is written to a temp PROMPTBACK_HOME (or one you pass).
-// Usage: node test/integration/runTest.mjs [--code <path to Code executable>] [--index-dir <dir>]
+// Usage: node test/integration/runTest.mjs [--code <path to Code executable>] [--download] [--index-dir <dir>]
+// Without --code, the locally installed VS Code is used when found; --download fetches a stable build into
+// .vscode-test/ instead (also the fallback on platforms without a known install location).
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -18,7 +20,9 @@ const defaultCode =
 	process.platform === 'win32'
 		? path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Microsoft VS Code', 'Code.exe')
 		: undefined;
-const vscodeExecutablePath = arg('--code') ?? (defaultCode && fs.existsSync(defaultCode) ? defaultCode : undefined);
+const vscodeExecutablePath = args.includes('--download')
+	? undefined
+	: (arg('--code') ?? (defaultCode && fs.existsSync(defaultCode) ? defaultCode : undefined));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'promptback-it-'));
 const indexDir = arg('--index-dir') ?? path.join(tmp, 'index');
 

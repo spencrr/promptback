@@ -41,7 +41,9 @@ exports.run = async function run() {
 	const status = await waitFor(
 		async () => {
 			const s = await api.status();
-			log(`status: ${s.prompts} prompts, ${s.embeddedChunks}/${s.chunks} embedded, syncing=${s.syncing}`);
+			log(
+				`status: ${s.prompts} prompts, ${s.embeddedChunks}/${s.chunks} embedded, syncing=${s.syncing}${s.errors.length > 0 ? ` errors: ${s.errors.slice(0, 3).join(' | ')}` : ''}`,
+			);
 			return s.prompts > 0 && s.embeddedChunks > 0 && !s.syncing ? s : undefined;
 		},
 		15 * 60_000,

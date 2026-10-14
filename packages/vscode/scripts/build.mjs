@@ -11,6 +11,10 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
+// package.mjs stages a single platform's onnxruntime-node under dist/node_modules. Left behind, that copy shadows
+// the full one in the repo's node_modules and a development build then fails to load the binding for this machine.
+fs.rmSync(path.join(root, 'dist', 'node_modules'), { recursive: true, force: true });
+
 /** @type {esbuild.BuildOptions} */
 const common = {
 	bundle: true,
