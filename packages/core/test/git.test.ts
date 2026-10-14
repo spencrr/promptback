@@ -54,9 +54,13 @@ describe('git helpers', () => {
 				() => false,
 			),
 		).toEqual([a, b]);
-		expect(gitRootsInText(`Resolve-Path "$HOME${path.sep}src${path.sep}alpha${path.sep}lib"`, tmp, () => false)).toEqual([a]);
+		expect(
+			gitRootsInText(`Resolve-Path "$HOME${path.sep}src${path.sep}alpha${path.sep}lib"`, tmp, () => false),
+		).toEqual([a]);
 		// URLs and relative segments are not paths.
-		expect(gitRootsInText('see https://github.com/owner/alpha/blob/main/lib/a.ts and lib/a.ts', tmp, () => false)).toEqual([]);
+		expect(
+			gitRootsInText('see https://github.com/owner/alpha/blob/main/lib/a.ts and lib/a.ts', tmp, () => false),
+		).toEqual([]);
 	});
 
 	it('treats ~/.copilot/chats/<id> as workspaceless and needs a clear majority to infer a repo', () => {

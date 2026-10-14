@@ -84,7 +84,8 @@ export function parseRemote(url: string | undefined): string | undefined {
  * Absolute or home-relative paths inside tool-call text: `C:\...`, `~/...`, `$HOME/...`, `%USERPROFILE%\...`, and
  * POSIX `/...` when the slash starts a token (so `https://host/x` and `a/b` are not paths).
  */
-const PATH_RE = /(?:~|\$HOME|\$env:USERPROFILE|%USERPROFILE%|[a-zA-Z]:)[\\/][^\s"'`;|<>*?]+|(?<![\w:./\\-])\/[^\s"'`;|<>*?:]+/gi;
+const PATH_RE =
+	/(?:~|\$HOME|\$env:USERPROFILE|%USERPROFILE%|[a-zA-Z]:)[\\/][^\s"'`;|<>*?]+|(?<![\w:./\\-])\/[^\s"'`;|<>*?:]+/gi;
 
 /** Git roots referenced by absolute (or home-relative) paths in a tool-call argument string. */
 export function gitRootsInText(text: string, home: string, ignore: (p: string) => boolean): string[] {
