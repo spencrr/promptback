@@ -1,0 +1,39 @@
+name: New prompt source
+description: Index the history of another AI coding tool (Cursor, Cline, Gemini CLI, Continue, Aider, ...)
+labels: [source, enhancement]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: Tool
+      placeholder: Cursor 1.x
+    validations:
+      required: true
+  - type: textarea
+    id: location
+    attributes:
+      label: Where does it store sessions?
+      description: Paths per OS, and whether the location can be overridden (environment variable or setting). Promptback only ever reads these.
+      placeholder: |
+        Windows: %APPDATA%\Cursor\User\workspaceStorage\<hash>\state.vscdb
+        macOS: ~/Library/Application Support/Cursor/...
+    validations:
+      required: true
+  - type: textarea
+    id: format
+    attributes:
+      label: Format
+      description: File type (JSONL, JSON, SQLite, Markdown), how a user prompt is represented, how to tell your prompts from injected context or sub-agent messages, and where the session's folder/repository/title live. A redacted sample line or row helps a lot.
+      render: text
+  - type: input
+    id: resume
+    attributes:
+      label: How can a session be reopened?
+      placeholder: cursor --resume <id>, a URL scheme, or not possible
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Help
+      options:
+        - label: I can test a build against my own history and report back
+        - label: I would like to implement this (see README → Extending; one plugin file plus a fixture test)

@@ -1,0 +1,1 @@
+Read [AGENTS.md](../AGENTS.md) at the repository root: it has the commands, the invariants and the conventions for this code base. Design decisions are recorded in [docs/DESIGN.md](../docs/DESIGN.md).

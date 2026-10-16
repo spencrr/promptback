@@ -152,4 +152,4 @@ Ranking parameters (`search/rank.ts`) are deliberately not pluggable: change the
 
 ## Contributing
 
-`npm run check` runs typecheck, lint (Biome) and the tests; CI runs them on Linux, macOS and Windows with Node 22, 24 and 26 and builds every artifact. [AGENTS.md](AGENTS.md) has the exact commands and the conventions that aren't obvious from the code. Licensed under [MIT](LICENSE).
+`npm ci` installs the dependencies and the git hooks; `npm run check` runs typecheck, lint (Biome) and the tests; CI runs them on Linux, macOS and Windows with Node 22, 24 and 26 and builds every artifact. See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) for the exact commands and conventions, [CHANGELOG.md](CHANGELOG.md) for what changed, and [SECURITY.md](SECURITY.md) for reporting vulnerabilities. Licensed under [MIT](LICENSE).

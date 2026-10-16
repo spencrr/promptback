@@ -4,13 +4,26 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait a week before proposing a freshly published version: compromised releases are usually caught within days.
+    cooldown:
+      default-days: 7
     groups:
       dev-tooling:
-        patterns: ["@biomejs/*", "vitest", "typescript", "esbuild", "@types/*", "@vscode/*"]
+        patterns: ["@biomejs/*", "vitest", "typescript", "esbuild", "@types/*", "@vscode/*", "lefthook"]
+        # Majors of the tooling are taken deliberately, one at a time.
+        update-types: ["minor", "patch"]
     ignore:
       # onnxruntime-node is pinned exactly: a bump changes the shipped native binaries and must be re-verified.
       - dependency-name: onnxruntime-node
+      # @types/node tracks the lowest supported Node (engines.node), not the newest release.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

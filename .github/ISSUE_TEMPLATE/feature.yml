@@ -1,0 +1,21 @@
+name: Feature request
+description: Something Promptback should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task or question that led here, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help?
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      multiple: true
+      options: [Prompt Explorer, Quick search, CLI, MCP tools, Ranking / search quality, Other]

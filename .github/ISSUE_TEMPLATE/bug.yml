@@ -1,0 +1,51 @@
+name: Bug report
+description: Something is wrong (indexing, search results, the Explorer, the CLI or the MCP server)
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      multiple: true
+      options: [VS Code extension, Agents window, CLI (promptback), MCP server, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: sources
+    attributes:
+      label: Sources involved
+      multiple: true
+      options: [Copilot (Agents window / CLI / autopilot), VS Code Chat, Claude Code, Codex, Not source-specific]
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: "`promptback --version` or the extension version; OS; Node (`node --version`); VS Code (Help → About) if relevant"
+      placeholder: promptback 0.6.0 · Windows 11 · Node 22.13.0 · VS Code 1.141.1
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Index status
+      description: 'Output of `promptback status --json`, or **Promptback: Show Index Status** in VS Code. Remove anything you consider private.'
+      render: json
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: 'Relevant lines from **Promptback: Show Log** or `promptback ... --verbose`. Prompts you did not mean to share can be redacted.'
+      render: text

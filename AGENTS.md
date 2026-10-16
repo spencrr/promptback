@@ -7,7 +7,7 @@ You're working on **Promptback**: local-first semantic search over every prompt 
 ## Commands
 
 ```
-npm ci                                                       # Node >= 22.13 (node:sqlite), npm >= 10
+npm ci                                                       # Node >= 22.13 (node:sqlite), npm >= 10; installs the git hooks (lefthook)
 npm run check                                                # typecheck + lint + test: run before finishing
 npm run typecheck                                            # 4 tsconfigs: strict, noUnused*, noUncheckedIndexedAccess, verbatimModuleSyntax
 npm run lint                                                 # Biome (lint + format + import order); `npm run lint:fix` applies safe fixes
@@ -17,6 +17,7 @@ node packages/vscode/scripts/build.mjs                       # dist/{extension,h
 node packages/vscode/scripts/package.mjs --target win32-x64  # platform VSIX; add --bundle-model for an offline VSIX
 node packages/vscode/test/integration/runTest.mjs            # real VS Code against the user's real history (read-only), temp index
 npm run bench                                                # retrieval benchmark; needs gitignored packages/core/bench/data/*.local.json
+node scripts/release.mjs <version|patch|minor|major>         # lockstep version bump + CHANGELOG + commit + tag; pushing the tag runs release.yml
 ```
 
 Also run the integration test when you touch the extension, the host, the webview or `protocol.ts`. CI runs lint, the tests on Linux/macOS/Windows × Node 22/24/26, and builds every artifact.
@@ -56,9 +57,12 @@ npm workspaces, TypeScript throughout, one Biome config. `packages/core` ships a
 - Cache keys cover what changes results: vectors are keyed by model fingerprint + chunk-text hash; chunking options are recorded in `meta.chunking` and a change re-chunks everything; source cursors carry a `version` to force re-reads when a projection changes.
 - Tests never touch real data or the network (`test/setup.ts` stubs `fetch` and points default homes at an empty folder). Use temp dirs, explicit `sources: { <id>: { home } }`, and `embedding: { kind: 'none' | 'hashed' }` or a fake provider. The e2e test (`packages/cli/test`) spawns the built CLI.
 - Comment only what needs explaining; exported APIs get JSDoc.
-- Keep the four `package.json` versions and `server.json` in lockstep (`versions.test.ts` enforces it). The MCP server reports the version.
+- Keep the four `package.json` versions and `server.json` in lockstep (`versions.test.ts` enforces it; `scripts/release.mjs` does the bump). The MCP server reports the version. User-visible changes get a line under **Unreleased** in `CHANGELOG.md`.
 - User-visible changes update `README.md`, `packages/cli/README.md` (npm page) and `packages/vscode/README.md` (Marketplace page). Design decisions go in `docs/DESIGN.md`.
 - No `Co-authored-by` trailers in commits.
+- Git hooks (`lefthook.yml`): Biome on staged files at commit, `npm run typecheck` at push. `LEFTHOOK=0` skips once. They are installed by the root `prepare` script, so `npm ci --ignore-scripts` needs a manual `npx lefthook install`.
+- Node policy: `engines.node` is the floor (22.13, Maintenance LTS until 2027-04-30), `.node-version` and `@types/node` track it, and the CI matrix adds the newer LTS lines. Bump the floor when 22 reaches end of life or a dependency forces it; Dependabot is told not to bump `@types/node` majors on its own.
+- Dependencies: Dependabot runs weekly with a 7-day cooldown; dev-tooling minors/patches arrive as one grouped PR, majors (TypeScript, Vitest, Preact, vsce) are taken deliberately. Actions are pinned to commit SHAs. `npm ci --ignore-scripts` in CI; no dependency may need an install script.
 
 ## Gotchas
 

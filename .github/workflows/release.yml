@@ -1,0 +1,67 @@
+name: Release
+
+# Cut a release with `node scripts/release.mjs <version>` and push the tag. This workflow verifies that the tag matches
+# every version field, runs the full check, builds the artifacts and publishes a GitHub Release with generated notes.
+# Publishing to npm, the Marketplace, Open VSX and the MCP registry is a separate, deliberate step (see below).
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+env:
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  release:
+    name: Build and publish the GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Tag must match the version fields
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for f in package.json packages/core/package.json packages/cli/package.json packages/vscode/package.json packages/cli/server.json; do
+            v=$(node -p "require('./$f').version")
+            if [ "$v" != "$tag" ]; then echo "::error file=$f::version $v does not match tag $tag"; exit 1; fi
+          done
+      - run: npm run check
+      - name: Build artifacts
+        run: |
+          mkdir -p artifacts
+          npm pack -w packages/cli --pack-destination artifacts
+          for target in win32-x64 win32-arm64 linux-x64 linux-arm64 darwin-arm64; do
+            node packages/vscode/scripts/package.mjs --target "$target"
+          done
+          mv packages/vscode/*.vsix artifacts/
+          (cd artifacts && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Release notes from the changelog
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          # The section for this version, without its heading.
+          awk -v v="$tag" '/^## \[/{p=index($0, "[" v "]")>0; if(p){next}} p && /^## /{exit} p' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md." > notes.md
+          printf '\n\nArtifacts: the \`promptback\` CLI (npm tarball) and one VSIX per platform; \`SHA256SUMS.txt\` lists their digests.\n' >> notes.md
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --title "Promptback ${GITHUB_REF_NAME#v}" \
+            --notes-file notes.md \
+            --verify-tag
+
+  # Publishing is off until the maintainer lifts the hold. When it is time:
+  #   npm:          `npm publish -w packages/cli --provenance --access public` with npm trusted publishing (OIDC:
+  #                 permissions id-token: write; configure the trusted publisher on npmjs.com after the first manual publish)
+  #   Marketplace:  `npx vsce publish --packagePath artifacts/*.vsix` with VSCE_PAT
+  #   Open VSX:     `npx ovsx publish artifacts/*.vsix` with OVSX_PAT
+  #   MCP registry: `mcp-publisher publish` from packages/cli (dev.spencrr/promptback; DNS or HTTP namespace verification)
