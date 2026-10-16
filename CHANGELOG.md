@@ -17,6 +17,7 @@ All notable changes to Promptback are recorded here. The format follows [Keep a 
 - Saved source settings use a per-source shape; the previous flat shape is still read.
 - Changing the chunking options re-chunks every stored prompt instead of leaving stale chunk boundaries.
 - Terminal resume commands are offered only for shell-safe session ids; CSP nonces come from `node:crypto`.
+- The Explorer webview runs on Preact 11 (ESM-only, `useRef` initial values, `Object.is` hook dependencies); no visible change. Build and test tooling on TypeScript 7, Vitest 5 and vsce 4.
 
 ### Fixed
 - Repository inference from tool calls recognises POSIX paths (previously Windows paths only).

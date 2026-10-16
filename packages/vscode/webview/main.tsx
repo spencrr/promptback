@@ -1,6 +1,5 @@
 import './styles.css';
 import type { ExploreResult } from '@promptback/core/types';
-// biome-ignore lint/suspicious/noDeprecatedImports: only render(vnode, parent) is used; the deprecation is about its optional third parameter.
 import { render } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { PromptAction, ToWebview } from '../src/explorer/messages.js';
@@ -46,7 +45,7 @@ function App() {
 	const latest = useLatest();
 	const queryRef = useRef(query);
 	queryRef.current = query;
-	const pendingSelect = useRef<string>();
+	const pendingSelect = useRef<string | undefined>(undefined);
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	const runQuery = useCallback(

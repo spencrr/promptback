@@ -36,7 +36,7 @@ export function GraphView({
 	onActivate: (id: string) => void;
 }) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
-	const graphRef = useRef<ConstellationGraph>();
+	const graphRef = useRef<ConstellationGraph | null>(null);
 	const [focusGroup, setFocusGroup] = useState<string>();
 	const handlers = useRef({ select, onActivate, hover });
 	handlers.current = { select, onActivate, hover };
