@@ -33,10 +33,13 @@ export class OnnxEmbeddingProvider implements EmbeddingProvider {
 		};
 	}
 
-	static async create(spec: LocalModelSpec, modelDir: string, threads = 4): Promise<OnnxEmbeddingProvider> {
-		// Loaded lazily so lexical-only use never touches the native binding.
-		const mod = (await import('onnxruntime-node')) as typeof Ort & { default?: typeof Ort };
-		const ort = mod.default ?? mod;
+	/** `ort` comes from `loadOnnxRuntime()` (ort.ts), so the runtime is checked before any model is fetched. */
+	static async create(
+		ort: typeof Ort,
+		spec: LocalModelSpec,
+		modelDir: string,
+		threads = 4,
+	): Promise<OnnxEmbeddingProvider> {
 		const tokenizer = new Tokenizer(
 			JSON.parse(fs.readFileSync(path.join(modelDir, 'tokenizer.json'), 'utf8')),
 			JSON.parse(fs.readFileSync(path.join(modelDir, 'tokenizer_config.json'), 'utf8')),

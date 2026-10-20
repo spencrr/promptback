@@ -11,7 +11,7 @@ import * as z from 'zod/v4';
 import { type EngineOptions, PromptSearchEngine } from './engine.js';
 import { sessionOpenTargets } from './links.js';
 import { clientLabel, promptSources } from './sources/registry.js';
-import type { PromptOrigin, SearchHit, SessionInfo } from './types.js';
+import type { IndexStatus, PromptOrigin, SearchHit, SemanticStatus, SessionInfo } from './types.js';
 import { collectGarbage } from './util/gc.js';
 
 const SNIPPET_CHARS = 300;
@@ -98,7 +98,7 @@ export function createMcpServer(engine: PromptSearchEngine, opts: McpServerOptio
 				);
 			}
 			const lines = [
-				`${count(r.hits.length, 'prompt')} for ${JSON.stringify(query)}, best first${r.semanticUnavailable ? ' (keyword matches only: semantic search is off or not ready)' : ''}:`,
+				`${count(r.hits.length, 'prompt')} for ${JSON.stringify(query)}, best first${r.semanticUnavailable ? ` (${semanticNote(r.semantic)})` : ''}:`,
 			];
 			for (const [i, h] of r.hits.entries()) {
 				lines.push('', ...formatHit(h, i + 1));
@@ -252,7 +252,7 @@ export function createMcpServer(engine: PromptSearchEngine, opts: McpServerOptio
 				[
 					`Index: ${st.indexPath} (${(st.indexBytes / 1_048_576).toFixed(1)} MB)`,
 					`Prompts: ${st.prompts} in ${st.sessions} sessions. By author: ${counts(st.promptsByOrigin)}. By source: ${counts(st.promptsBySource)}.`,
-					`Semantic search: ${st.embeddedChunks} of ${st.chunks} chunks embedded${st.model ? ` with ${st.model}` : ''}${st.embeddingPaused ? ' (embedding paused)' : ''}.`,
+					`Semantic search: ${semanticSummary(st)}; ${st.embeddedChunks} of ${st.chunks} chunks embedded${st.model ? ` with ${st.model}` : ''}${st.embeddingPaused ? ' (embedding paused)' : ''}.`,
 					`Last sync: ${st.lastSyncAt ? when(st.lastSyncAt) : 'never'}${engine.isSyncing ? ' (syncing now)' : ''}.`,
 					...st.errors.slice(0, 5).map(e => `Problem: ${e}`),
 				].join('\n'),
@@ -386,6 +386,33 @@ function when(ms: number): string {
 
 function count(n: number, one: string, many = `${one}s`): string {
 	return `${n} ${n === 1 ? one : many}`;
+}
+
+/** Why a result has keyword matches only, for the model reading it. */
+function semanticNote(s: SemanticStatus): string {
+	switch (s.state) {
+		case 'failed':
+			return `keyword matches only; semantic search is unavailable: ${s.reason}`;
+		case 'off':
+			return 'keyword matches only; semantic search is turned off';
+		case 'pending':
+			return 'keyword matches only; the embedding model is still loading or embedding new prompts, retry shortly for semantic matches';
+		case 'ready':
+			return 'keyword matches only';
+	}
+}
+
+function semanticSummary(st: IndexStatus): string {
+	switch (st.semantic.state) {
+		case 'failed':
+			return `unavailable (${st.semantic.reason})`;
+		case 'off':
+			return 'off';
+		case 'ready':
+			return 'ready';
+		case 'pending':
+			return st.modelLoaded ? 'embedding new prompts' : 'model not loaded yet (loads on the first query)';
+	}
 }
 
 function textResult(t: string): CallToolResult {

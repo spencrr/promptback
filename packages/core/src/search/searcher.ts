@@ -9,6 +9,7 @@ import type {
 	SearchMode,
 	SearchQuery,
 	SearchResult,
+	SemanticStatus,
 	SessionInfo,
 } from '../types.js';
 import { ALL_ORIGINS } from '../types.js';
@@ -45,12 +46,33 @@ function isDense(parsed: ParsedQuery, requestedMode: SearchMode | undefined): bo
 	return (parsed.mode ?? requestedMode ?? 'hybrid') !== 'lexical' && parsed.freeText.length > 0;
 }
 
+/** `hasVectors`: whether any chunk of the current model is embedded yet. */
+export function semanticStatus(embedding: EmbeddingState, hasVectors: boolean): SemanticStatus {
+	if (embedding.off) {
+		return { state: 'off' };
+	}
+	if (embedding.error !== undefined) {
+		return { state: 'failed', reason: embedding.error };
+	}
+	return embedding.provider && hasVectors ? { state: 'ready' } : { state: 'pending' };
+}
+
+/** The engine's view of its embedding backend, read at query time. */
+export interface EmbeddingState {
+	readonly provider?: EmbeddingProvider;
+	/** Why the provider could not be created, when it could not. */
+	readonly error?: string;
+	/** Embeddings are turned off (`none`): keyword search is the intended behaviour, not a degradation. */
+	readonly off: boolean;
+}
+
 interface Ranked {
 	readonly corpus: Corpus;
 	readonly parsed: ParsedQuery;
 	readonly filters: SearchFilters;
 	readonly mode: SearchMode;
 	readonly semanticUnavailable: boolean;
+	readonly semantic: SemanticStatus;
 	/** Best first. Browse queries (no free text) are newest first with score 0. */
 	readonly scored: Scored[];
 	readonly isBrowse: boolean;
@@ -65,7 +87,7 @@ export class Searcher {
 	constructor(
 		private readonly store: Store,
 		private readonly corpus: CorpusCache,
-		private readonly provider: () => EmbeddingProvider | undefined,
+		private readonly embedding: () => EmbeddingState,
 		private readonly ranking: RankingOptions = DEFAULT_RANKING,
 	) {}
 
@@ -145,6 +167,7 @@ export class Searcher {
 			filters: r.filters,
 			mode: r.mode,
 			semanticUnavailable: r.semanticUnavailable,
+			semantic: r.semantic,
 			hits,
 			tookMs: Math.round(performance.now() - t0),
 		};
@@ -220,6 +243,7 @@ export class Searcher {
 			freeText: r.parsed.freeText,
 			mode: r.mode,
 			semanticUnavailable: r.semanticUnavailable,
+			semantic: r.semantic,
 			revision: r.corpus.revision,
 			rows: rows.map(row => ({ ...row, topic: topicOf.get(row.hash) })),
 			sessions,
@@ -290,11 +314,13 @@ export class Searcher {
 			allowed = new Set([...allowed].filter(id => !excluded.has(id)));
 		}
 
-		const provider = this.provider();
-		const denseReady = Boolean(provider) && Boolean(corpus.matrix?.count);
+		const embedding = this.embedding();
+		const provider = embedding.provider;
+		const semantic = semanticStatus(embedding, Boolean(corpus.matrix?.count));
+		const denseReady = semantic.state === 'ready';
 		const wantDense = isDense(parsed, requestedMode);
 		const hasLexical = parsed.terms.length > 0 || parsed.phrases.length > 0;
-		const base = { corpus, parsed, filters, mode, semanticUnavailable: wantDense && !denseReady };
+		const base = { corpus, parsed, filters, mode, semantic, semanticUnavailable: wantDense && !denseReady };
 
 		if (!hasLexical && !parsed.freeText) {
 			const scored = [...allowed]

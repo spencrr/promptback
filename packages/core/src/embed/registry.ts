@@ -5,6 +5,7 @@ import { resolveModelDir } from './modelStore.js';
 import { DEFAULT_LOCAL_MODEL, getModelSpec, loadModelManifest } from './models.js';
 import { OnnxEmbeddingProvider } from './onnx.js';
 import { OpenAICompatibleEmbeddingProvider } from './openai.js';
+import { loadOnnxRuntime } from './ort.js';
 import type { EmbeddingProvider } from './provider.js';
 
 /** What the engine gives a provider plugin besides its own options. */
@@ -67,6 +68,8 @@ export const localProvider: EmbeddingProviderPlugin<z.infer<typeof localProvider
 	local: true,
 	options: localProviderOptions,
 	async create(o, env) {
+		// The runtime first: a missing native binary should fail fast, not after a 33 MB download.
+		const ort = await loadOnnxRuntime();
 		const spec = (o.modelDir && loadModelManifest(o.modelDir)) || getModelSpec(o.model);
 		const dir = await resolveModelDir(spec, {
 			modelDir: o.modelDir,
@@ -77,7 +80,7 @@ export const localProvider: EmbeddingProviderPlugin<z.infer<typeof localProvider
 			onProgress: env.onProgress,
 			fetch: env.fetch,
 		});
-		return OnnxEmbeddingProvider.create(spec, dir, o.threads);
+		return OnnxEmbeddingProvider.create(ort, spec, dir, o.threads);
 	},
 };
 

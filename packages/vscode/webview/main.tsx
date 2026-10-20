@@ -326,7 +326,16 @@ function App() {
 						Search failed: {error}
 					</div>
 				) : null}
-				{result?.semanticUnavailable ? (
+				{result?.semanticUnavailable && result.semantic.state === 'failed' ? (
+					<div class="banner error">
+						<Icon name="warning" />
+						Semantic search is unavailable: {result.semantic.reason} Showing keyword matches.{' '}
+						<button type="button" class="link" onClick={() => setShowIndex(true)}>
+							Index &amp; model
+						</button>
+					</div>
+				) : null}
+				{result?.semanticUnavailable && result.semantic.state === 'pending' ? (
 					<div class="banner">
 						<Icon name="info" />
 						Semantic search is warming up — showing keyword matches for now.

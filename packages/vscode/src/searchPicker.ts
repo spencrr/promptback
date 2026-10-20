@@ -176,7 +176,12 @@ function titleFor(res: SearchResult, includeAll: boolean): string {
 		parts.push('most recent');
 	}
 	if (res.semanticUnavailable) {
-		parts.push('keyword only (semantic index warming up)');
+		const why = {
+			failed: 'semantic search unavailable',
+			pending: 'semantic index warming up',
+			off: 'embeddings off',
+		};
+		parts.push(`keyword only${res.semantic.state === 'ready' ? '' : ` (${why[res.semantic.state]})`}`);
 	} else if (res.freeText) {
 		parts.push(res.mode);
 	}

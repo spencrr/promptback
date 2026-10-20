@@ -143,14 +143,26 @@ export interface SearchHit {
 	readonly moreInSession: number;
 }
 
+/**
+ * Whether semantic (embedding) retrieval can run right now, and if not, why: the model is still loading or the
+ * vectors are still being computed (`pending`), embeddings are turned off (`off`), or the model could not be loaded
+ * (`failed`, with a reason that says what to do).
+ */
+export type SemanticStatus =
+	| { readonly state: 'ready' }
+	| { readonly state: 'pending' }
+	| { readonly state: 'off' }
+	| { readonly state: 'failed'; readonly reason: string };
+
 export interface SearchResult {
 	readonly query: string;
 	/** The free text left after stripping filter tokens. */
 	readonly freeText: string;
 	readonly filters: SearchFilters;
 	readonly mode: SearchMode;
-	/** True when semantic retrieval was requested but unavailable (no model / embeddings pending). */
+	/** True when semantic retrieval was requested but unavailable; {@link semantic} says why. */
 	readonly semanticUnavailable: boolean;
+	readonly semantic: SemanticStatus;
 	readonly hits: readonly SearchHit[];
 	readonly tookMs: number;
 }
@@ -198,7 +210,9 @@ export interface ExploreResult {
 	readonly query: string;
 	readonly freeText: string;
 	readonly mode: SearchMode;
+	/** True when semantic retrieval was requested but unavailable; {@link semantic} says why. */
 	readonly semanticUnavailable: boolean;
+	readonly semantic: SemanticStatus;
 	/** Index revision the rows were computed from. */
 	readonly revision: string;
 	/** Every matching occurrence (all prompts for an empty query), best first. Facet filtering happens client-side. */
@@ -224,6 +238,7 @@ export interface IndexStatus {
 	readonly embeddingPaused: boolean;
 	readonly model?: string;
 	readonly modelLoaded: boolean;
+	readonly semantic: SemanticStatus;
 	readonly lastSyncAt?: number;
 	readonly errors: readonly string[];
 }
@@ -252,6 +267,8 @@ export interface SyncResult {
 	readonly tookMs: number;
 	/** False when another process holds the writer lease and this call did nothing. */
 	readonly leader: boolean;
+	/** Availability of semantic search after this sync. */
+	readonly semantic: SemanticStatus;
 }
 
 /** A way to reopen or resume the session a prompt came from. */

@@ -111,6 +111,12 @@ function registerStatusItem(context: vscode.ExtensionContext, host: HostClient, 
 			for (const e of r.errors.slice(0, 20)) {
 				log.warn(e);
 			}
+			if (r.semantic.state === 'failed') {
+				item.text = '$(warning) Prompts';
+				item.tooltip = `Semantic search is unavailable: ${r.semantic.reason} Keyword search still works.`;
+				item.command = 'promptback.showStatus';
+				warnSemanticUnavailable(r.semantic.reason, log);
+			}
 			if (r.embeddedChunks > 0 || r.addedPrompts > 0) {
 				log.info(
 					`Sync: +${r.addedPrompts}/-${r.removedPrompts} prompts, ${r.embeddedChunks} chunks embedded in ${(r.tookMs / 1000).toFixed(1)} s`,
@@ -134,6 +140,31 @@ function registerStatusItem(context: vscode.ExtensionContext, host: HostClient, 
 			}
 		}),
 	);
+}
+
+let semanticWarned = false;
+
+/** Says once per session that semantic search is broken and why; keyword search keeps working meanwhile. */
+function warnSemanticUnavailable(reason: string, log: vscode.LogOutputChannel): void {
+	if (semanticWarned) {
+		return;
+	}
+	semanticWarned = true;
+	void vscode.window
+		.showWarningMessage(
+			`Semantic search is unavailable: ${reason} Keyword search still works.`,
+			'Show Log',
+			'Use hashed embeddings',
+		)
+		.then(choice => {
+			if (choice === 'Show Log') {
+				log.show();
+			} else if (choice === 'Use hashed embeddings') {
+				return vscode.workspace
+					.getConfiguration('promptback')
+					.update('embedding.provider', 'hashed', vscode.ConfigurationTarget.Global);
+			}
+		});
 }
 
 function registerSidebar(context: vscode.ExtensionContext, host: HostClient, explorer: ExplorerProvider): void {
@@ -241,7 +272,7 @@ function registerCommands(
 		const detail = [
 			`${s.prompts.toLocaleString()} prompts in ${s.sessions.toLocaleString()} sessions (${list(s.promptsByOrigin)})`,
 			`Sources: ${list(s.promptsBySource)}`,
-			`Semantic: ${s.embeddedChunks.toLocaleString()} / ${s.chunks.toLocaleString()} chunks embedded${s.model ? ` with ${s.model}` : ''}`,
+			`Semantic: ${s.semantic.state === 'failed' ? 'unavailable; ' : ''}${s.embeddedChunks.toLocaleString()} / ${s.chunks.toLocaleString()} chunks embedded${s.model ? ` with ${s.model}` : ''}`,
 			`Last sync: ${s.lastSyncAt ? new Date(s.lastSyncAt).toLocaleString() : 'never'}${s.syncing ? ' (syncing now)' : ''}`,
 			`Index: ${s.indexPath}`,
 			...s.errors.slice(0, 5).map(e => `⚠ ${e}`),

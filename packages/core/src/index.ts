@@ -11,6 +11,15 @@ export {
 	MODEL_MANIFEST,
 	type ModelFile,
 } from './embed/models.js';
+export {
+	describeOnnxRuntimeError,
+	isOnnxRuntimeSupported,
+	loadOnnxRuntime,
+	NativeRuntimeError,
+	ONNX_RUNTIME_TARGETS,
+	onnxRuntimeTarget,
+	type RuntimeEnvironment,
+} from './embed/ort.js';
 export type { EmbeddingProvider, EmbeddingProviderInfo } from './embed/provider.js';
 export {
 	createEmbeddingProvider,

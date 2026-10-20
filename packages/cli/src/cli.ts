@@ -5,11 +5,15 @@ import { parseArgs } from 'node:util';
 import {
 	type EmbeddingConfig,
 	type EngineOptions,
+	type IndexStatus,
+	isOnnxRuntimeSupported,
 	localModels,
+	onnxRuntimeTarget,
 	PromptSearchEngine,
 	promptSources,
 	type SearchHit,
 	type SearchMode,
+	type SemanticStatus,
 	sessionOpenTargets,
 } from '@promptback/core';
 import { serveMcp } from '@promptback/core/mcp';
@@ -30,6 +34,7 @@ Usage:
   promptback search <query...> [--json] [--limit N] [--mode hybrid|semantic|lexical]
   promptback get <promptId>                 Print one prompt (full text)
   promptback status [--json]                Index statistics
+  promptback doctor                         Check that semantic search works on this machine (runtime, model, one embedding)
   promptback sources [--json]               Prompt sources and whether each is on
   promptback models                         List local embedding models
   promptback mcp                            Run the MCP server on stdio (for Copilot CLI and other agents)
@@ -118,6 +123,9 @@ async function main(): Promise<void> {
 			case 'status':
 				printStatus(engine, values.json === true);
 				break;
+			case 'doctor':
+				await runDoctor(engine, values);
+				break;
 			case 'sources':
 				printSources(engine, values.json === true);
 				break;
@@ -174,13 +182,79 @@ async function runSearch(engine: PromptSearchEngine, text: string, values: Flags
 		console.log(JSON.stringify(res, null, 2));
 		return;
 	}
-	if (res.semanticUnavailable) {
-		console.error('(semantic search unavailable — showing keyword matches; run `promptback index`)');
+	if (res.semanticUnavailable && res.semantic.state !== 'off') {
+		console.error(`(keyword matches only; ${semanticNote(res.semantic)})`);
 	}
 	for (const [i, h] of res.hits.entries()) {
 		printHit(h, i + 1);
 	}
 	console.error(`${res.hits.length} hits in ${res.tookMs} ms`);
+}
+
+/** One clause on why semantic retrieval did not run. */
+function semanticNote(s: SemanticStatus): string {
+	switch (s.state) {
+		case 'failed':
+			return `semantic search unavailable: ${s.reason}`;
+		case 'off':
+			return 'semantic search is off (--no-model)';
+		case 'pending':
+			return 'semantic search not ready yet (the model is loading or prompts are still being embedded; `promptback index` embeds them)';
+		case 'ready':
+			return 'semantic search ready';
+	}
+}
+
+/**
+ * Checks the whole semantic-search path on this machine: platform support, the native runtime, the model (downloading
+ * it if allowed) and one embedding. Exit code 1 when semantic search is unavailable, so scripts can tell.
+ */
+async function runDoctor(engine: PromptSearchEngine, values: Flags): Promise<void> {
+	const target = onnxRuntimeTarget();
+	const before = engine.status();
+	const out = (label: string, value: string) => console.log(`${label.padEnd(10)} ${value}`);
+	out('promptback', VERSION);
+	out(
+		'platform',
+		`${target}, Node ${process.version}${isOnnxRuntimeSupported() ? '' : ' (no ONNX Runtime build for this platform)'}`,
+	);
+	out(
+		'index',
+		`${before.indexPath} (${(before.indexBytes / 1_048_576).toFixed(1)} MB, ${before.prompts} prompts in ${before.sessions} sessions, ${before.embeddedChunks}/${before.chunks} chunks embedded${before.model ? ` with ${before.model}` : ''})`,
+	);
+	const sourceState = (s: { enabled: boolean; error?: string }) => {
+		if (s.error) {
+			return 'INVALID';
+		}
+		return s.enabled ? 'on' : 'off';
+	};
+	out(
+		'sources',
+		engine
+			.describeSources()
+			.map(s => `${s.id} ${sourceState(s)}`)
+			.join(', '),
+	);
+	if (before.semantic.state === 'off') {
+		out('semantic', 'off (--no-model): keyword search only');
+		return;
+	}
+	const t0 = Date.now();
+	const provider = await engine.ensureProvider(m => values.verbose && console.error(`[promptback] ${m}`));
+	const after = engine.status();
+	if (!provider || after.semantic.state === 'failed') {
+		out(
+			'semantic',
+			`UNAVAILABLE: ${after.semantic.state === 'failed' ? after.semantic.reason : 'the model did not load'}`,
+		);
+		process.exitCode = 1;
+		return;
+	}
+	const v = await provider.embedQuery('doctor');
+	out(
+		'semantic',
+		`OK: ${provider.info.displayName} (${v.length}d) loaded in ${Date.now() - t0} ms${after.pendingChunks > 0 ? `; ${after.pendingChunks} chunks still to embed (run \`promptback index\`)` : ''}`,
+	);
 }
 
 function printStatus(engine: PromptSearchEngine, json: boolean): void {
@@ -193,10 +267,27 @@ function printStatus(engine: PromptSearchEngine, json: boolean): void {
 					`sessions:  ${s.sessions}`,
 					`prompts:   ${s.prompts}  ${JSON.stringify(s.promptsByOrigin)}  ${JSON.stringify(s.promptsBySource)}`,
 					`chunks:    ${s.embeddedChunks}/${s.chunks} embedded (${s.model ?? 'no model loaded'})`,
+					`semantic:  ${semanticSummary(s)}`,
 					`last sync: ${s.lastSyncAt ? new Date(s.lastSyncAt).toLocaleString() : 'never'}`,
 					...s.errors.slice(0, 5).map(e => `error:     ${e}`),
 				].join('\n'),
 	);
+}
+
+/** `status` never loads the model, so "pending" there means "loads on the first query", not "loading". */
+function semanticSummary(s: IndexStatus): string {
+	switch (s.semantic.state) {
+		case 'failed':
+			return `UNAVAILABLE: ${s.semantic.reason}`;
+		case 'off':
+			return 'off (--no-model)';
+		case 'ready':
+			return 'ready';
+		case 'pending':
+			return s.modelLoaded
+				? 'model loaded, prompts still being embedded'
+				: 'model not loaded in this process (loads on the first query; `promptback doctor` checks it)';
+	}
 }
 
 /** Registered sources with the options this index would sync them with (saved by the extension, or defaults). */

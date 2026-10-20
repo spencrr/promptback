@@ -22,12 +22,15 @@ Nothing to download? `promptback search ... --no-model` searches by keywords onl
 | `promptback index [--no-embed]` | Ingest new prompts and embed them |
 | `promptback search <query...> [--json] [--limit N] [--mode hybrid\|semantic\|lexical]` | Best matches, with ids and how to reopen each session |
 | `promptback get <promptId>` | One prompt's full text |
-| `promptback status [--json]` | Index statistics |
+| `promptback status [--json]` | Index statistics, including whether semantic search is ready |
+| `promptback doctor` | Checks semantic search end to end on this machine (platform, native runtime, model, one embedding); exit code 1 when it is unavailable |
 | `promptback sources [--json]` | Prompt sources and whether each is on |
 | `promptback models` | Local embedding models |
 | `promptback mcp` | Run the MCP server on stdio |
 
 Options: `--index-dir <dir>` (default `~/.promptback`, or `$PROMPTBACK_HOME`), `--model <id>`, `--no-model`, `--no-download`, `--verbose`, `--version`.
+
+Semantic search runs on Windows and Linux (x64 and arm64) and Apple silicon; elsewhere, and whenever the model cannot load, `search` falls back to keyword matches and says why on stderr. `promptback doctor` tells you what is wrong (a build for another architecture, a missing Visual C++ runtime on Windows, no model and downloads disabled, ...).
 
 ### Query syntax
 

@@ -10,6 +10,9 @@ All notable changes to Promptback are recorded here. The format follows [Keep a 
 - `hashed` embedding provider: word-overlap vectors with no model or native code, for platforms without onnxruntime binaries.
 - `promptback sources` and `promptback --version`; `server.json` for the MCP registry (`dev.spencrr/promptback`).
 - Git hooks (lefthook): Biome on staged files at commit, typecheck on push.
+- `promptback doctor`: checks platform support, the native ONNX runtime, the model and one embedding; exit code 1 when semantic search is unavailable.
+- Results and status carry a `semantic` state (`ready`, `pending`, `off`, `failed` with the reason), and every surface shows the reason semantic search did not run: CLI stderr, the first line of MCP results, an Explorer banner, the Index panel, and a one-time VS Code warning with **Use hashed embeddings**.
+- CI runs the tests on Windows and Linux arm64 as well, including a real ONNX inference.
 
 ### Changed
 - Renamed from Yesterprompt to **Promptback**: `PROMPTBACK_HOME`, `~/.promptback`, `promptback.*` settings, extension id `spencrr.promptback-vscode`, CLI `promptback`.
@@ -21,5 +24,8 @@ All notable changes to Promptback are recorded here. The format follows [Keep a 
 
 ### Fixed
 - Repository inference from tool calls recognises POSIX paths (previously Windows paths only).
+- A VSIX installed on VS Code of the other architecture (VS Code allows it) failed with a raw `Cannot find module '../bin/napi-v6/.../onnxruntime_binding.node'` after downloading the model, while the UI said "warming up". The runtime is now checked before any download, and the message names the architectures the build contains and the one to install; a missing Visual C++ runtime on Windows is diagnosed with the matching installer link.
+- Embeddings turned off (`none`) no longer show a permanent "warming up" banner in the Explorer.
+- A failed model load is no longer retried on every search; syncs still retry.
 
 [unreleased]: https://github.com/spencrr/promptback/compare/6564669...HEAD

@@ -56,6 +56,14 @@ VS Code window(s) / Agents window             CLI (promptback)          MCP serv
 
 - **Model distribution.** Early VSIXes bundled the 33 MB model, so every extension update re-shipped it and the npm CLI could never have it. Now every surface downloads it on first use from the pinned revision and verifies SHA-256, into `~/.promptback/models`, which the CLI, the MCP server and the extension share. Offline machines use `promptback.embedding.modelDir` / a copied folder, `package.mjs --bundle-model` for an offline VSIX, or the `hashed` provider. Downloads are refused for manifests without pinned hashes.
 
+- **When the runtime cannot load (`embed/ort.ts`).** The first real-world failure was a win32-x64 VSIX installed on arm64 VS Code: VS Code does not reject a VSIX for another target, each VSIX stages one platform's onnxruntime binaries, and the loader's `Cannot find module '../bin/napi-v6/win32/arm64/onnxruntime_binding.node'` reached the user verbatim after a 33 MB model download, while every surface still said "warming up". Decisions:
+  - The native runtime is loaded before the model is resolved, so the cheap check fails first.
+  - Loader errors are classified from `code`, the message and `requireStack` into one sentence with the remedy: which targets the installation contains versus the running process (wrong-architecture build); the missing Visual C++ runtime on Windows, with the installer for the running architecture (both `onnxruntime.dll` builds import MSVCP140/VCRUNTIME140, verified from their import tables; DirectML is loaded lazily, so pruning it from the VSIX is safe); no onnxruntime-node build for the platform, pointing at `hashed`; a dependency problem on Linux.
+  - Results carry a `SemanticStatus` (`ready | pending | off | failed + reason`) next to the older `semanticUnavailable` flag, so surfaces can distinguish "still embedding" from "broken" from "turned off" instead of guessing. `off` is now silent in the Explorer (it used to show "warming up" forever).
+  - No automatic provider fallback. Switching to `hashed` would change the index's vectors and hide the problem; the user is told and offered the switch (one VS Code warning per session, `promptback doctor` in the CLI).
+  - Search-triggered loads back off for 30 s after a failure so typing in the Explorer does not retry a download or a `dlopen` per keystroke; syncs always retry, so **Scan now** and `promptback index` pick up a fixed installation.
+  - `ort.test.ts` runs a real inference through a 60-byte hand-encoded ONNX graph (`y = Identity(x)`) on every CI cell, and the matrix includes `windows-11-arm` and `ubuntu-24.04-arm` (standard runners, free minutes for private repos too); `macos-latest` is arm64 already.
+
 Benchmark from proposal 3: 903 deduped human prompts, 40 normal + 25 hard paraphrase queries, MRR@10.
 
 | Config | Normal | Hard |

@@ -46,6 +46,20 @@ Then press **Ctrl+Alt+E** (macOS **Cmd+Ctrl+E**) for the Prompt Explorer, or **C
 
 No model, no download: pass `--no-model` to the CLI (keyword search only), or set `promptback.embedding.provider` to `hashed` (word-overlap vectors, works everywhere) or `none`. See [`examples/`](examples/README.md) for runnable scripts, including one that needs nothing beyond Node.
 
+### Platforms
+
+| | x64 | arm64 |
+|---|---|---|
+| Windows | semantic | semantic |
+| Linux | semantic | semantic |
+| macOS | keyword or `hashed` (no onnxruntime-node build) | semantic |
+
+"Semantic" means the local ONNX model; keyword search works everywhere. The VSIX must match your VS Code's architecture (**Help → About** shows it, e.g. `arm64`): VS Code installs a mismatched VSIX without complaint, and semantic search then reports that the build only contains binaries for the other architecture. On Windows the runtime needs the [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) for the same architecture (`vc_redist.arm64.exe` on ARM PCs). CI runs the tests, including a real ONNX inference, on Windows and Linux for both architectures and on Apple silicon.
+
+### When semantic search is unavailable
+
+Keyword search keeps working and every surface says why semantic search did not run: the CLI on stderr, MCP results in their first line, the Explorer in a banner, VS Code in a one-time warning with a **Use hashed embeddings** shortcut. `promptback doctor` checks the whole path (platform, native runtime, model, one embedding) and exits 1 when it fails; paste its output into a bug report.
+
 ### Query syntax
 
 Free text plus `repo:` `branch:` `cwd:` `after:` `before:` `on:` `from:(me|agent|skill|system|any)` `src:(copilot|vscode-chat|claude-code|codex)` `client:(agent-host|cli|autopilot|chat|claude|codex)` `session:` `model:` `mode:(lex|sem)` `sort:recent` `is:ack` `"exact phrase"` `-exclude`. Dates accept `2026-09-30`, `2026-09`, `7d`, `2w`, `3m`, `today`, `yesterday`.

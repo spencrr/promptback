@@ -103,4 +103,10 @@ There, the Explorer opens as a full-area tab and adapts to the narrower pane (fi
 | `promptback.sources.copilotHome`, `.claudeCodeHome`, `.codexHome` | | Override `~/.copilot`, `~/.claude`, `~/.codex` |
 | `promptback.sources.retainDeleted` | `false` | Keep prompts after their session is deleted from disk |
 
-Platforms: Windows (x64, arm64), Linux (x64, arm64) and macOS (Apple silicon), one VSIX each because the embedding runtime is native. Source, issues and the CLI: [github.com/spencrr/promptback](https://github.com/spencrr/promptback). MIT.
+## Platforms and troubleshooting
+
+Windows (x64, arm64), Linux (x64, arm64) and macOS (Apple silicon), one VSIX each because the embedding runtime is native; the Marketplace picks the right one. When installing a VSIX by hand it must match your VS Code's architecture (**Help → About**, e.g. `arm64`). Keyword search works everywhere.
+
+If semantic search cannot run you get one warning that says why, with **Show Log** and **Use hashed embeddings** (word-overlap vectors, no native code), and the Explorer shows the reason in a banner until it is fixed. The usual causes: a VSIX built for the other architecture (the message names what the build contains); on Windows, a missing [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) for your architecture; downloads disabled with no model installed. **Promptback: Show Index Status** and the Index panel show the same state; the CLI's `promptback doctor` checks the whole path.
+
+Source, issues and the CLI: [github.com/spencrr/promptback](https://github.com/spencrr/promptback). MIT.

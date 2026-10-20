@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { NativeRuntimeError } from './embed/ort.js';
 import type { EmbeddingProvider } from './embed/provider.js';
 import { createEmbeddingProvider, type EmbeddingConfig, NO_EMBEDDING } from './embed/registry.js';
 import { defaultIndexDir } from './paths.js';
 import { type PluginOptionsError, parseOptions, type Registry } from './registry.js';
 import { type ChunkOptions, chunkText, DEFAULT_CHUNK_OPTIONS } from './search/chunk.js';
 import { CorpusCache } from './search/corpus.js';
-import { DEFAULT_RANKING, type RankingOptions, Searcher, wantsDense } from './search/searcher.js';
+import { DEFAULT_RANKING, type RankingOptions, Searcher, semanticStatus, wantsDense } from './search/searcher.js';
 import type { PromptSourcePlugin, SourceContext } from './sources/base.js';
 import { promptSources } from './sources/registry.js';
 import { type PromptMeta, Store, type StoredPrompt } from './store.js';
@@ -65,6 +66,8 @@ export interface SyncOptions {
 
 const LEASE_TTL = 5 * 60_000;
 const EMBED_BATCH = 64;
+/** After the model fails to load, searches report the failure for this long before trying again; syncs always retry. */
+const PROVIDER_RETRY_MS = 30_000;
 
 /** What `meta.sources` holds. Version 2; version 1 (`{ copilotHome, vscodeChat, retainDeleted }`) is still read. */
 interface SourceSettings {
@@ -110,7 +113,9 @@ export class PromptSearchEngine {
 	private readonly corpus: CorpusCache;
 	private provider: EmbeddingProvider | undefined;
 	private providerPromise: Promise<EmbeddingProvider | undefined> | undefined;
+	/** Why the embedding model could not be loaded, while that is the case. */
 	private providerError: string | undefined;
+	private providerFailedAt = 0;
 	private lastUse = Date.now();
 	private readonly owner = `${os.hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
 	private readonly chunkOpts: ChunkOptions;
@@ -126,10 +131,18 @@ export class PromptSearchEngine {
 		this.chunkOpts = { ...DEFAULT_CHUNK_OPTIONS, ...opts.chunking };
 		this.sources = opts.sourceRegistry ?? promptSources;
 		this.corpus = new CorpusCache(this.store, () => this.provider);
-		this.searcher = new Searcher(this.store, this.corpus, () => this.provider, {
+		this.searcher = new Searcher(this.store, this.corpus, () => this.embeddingState(), {
 			...DEFAULT_RANKING,
 			...opts.ranking,
 		});
+	}
+
+	private embeddingState() {
+		return {
+			provider: this.provider,
+			error: this.providerError,
+			off: !this.opts.embeddingProvider && this.embeddingConfig.kind === NO_EMBEDDING,
+		};
 	}
 
 	static open(opts: EngineOptions = {}): PromptSearchEngine {
@@ -167,6 +180,7 @@ export class PromptSearchEngine {
 					}));
 				this.provider = p;
 				this.providerError = undefined;
+				this.providerFailedAt = 0;
 				if (p) {
 					this.store.setMeta('modelFingerprint', p.info.fingerprint);
 					this.store.setMeta('modelName', p.info.displayName);
@@ -175,8 +189,12 @@ export class PromptSearchEngine {
 				}
 				return p;
 			} catch (e) {
-				this.providerError = `Embedding model unavailable: ${errorMessage(e)}`;
-				this.log(this.providerError);
+				this.providerError = errorMessage(e);
+				this.providerFailedAt = Date.now();
+				this.log(`Semantic search unavailable: ${this.providerError}`);
+				if (e instanceof NativeRuntimeError) {
+					this.log(`  ${e.detail}`);
+				}
 			} finally {
 				this.providerPromise = undefined;
 			}
@@ -228,6 +246,7 @@ export class PromptSearchEngine {
 				errors: [],
 				tookMs: 0,
 				leader: false,
+				semantic: this.status().semantic,
 			};
 		}
 		try {
@@ -300,6 +319,10 @@ export class PromptSearchEngine {
 				errors: this.lastErrors,
 				tookMs: Date.now() - t0,
 				leader: true,
+				semantic: semanticStatus(
+					this.embeddingState(),
+					p ? this.store.counts(p.info.fingerprint).embedded > 0 : false,
+				),
 			};
 		} finally {
 			this.store.releaseLease(this.owner);
@@ -383,7 +406,7 @@ export class PromptSearchEngine {
 		const provider = await this.ensureProvider(m => opts.onProgress?.({ phase: 'embed', message: m }));
 		if (!provider) {
 			if (this.providerError) {
-				errors.push(this.providerError);
+				errors.push(`Semantic search unavailable: ${this.providerError}`);
 			}
 			return 0;
 		}
@@ -445,9 +468,15 @@ export class PromptSearchEngine {
 		return this.searcher.explore(query);
 	}
 
-	/** Starts loading the embedding model; resolves when loaded or after `maxWaitMs`. */
+	/**
+	 * Starts loading the embedding model; resolves when loaded or after `maxWaitMs`. A recent failure is not retried
+	 * here (results carry its reason instead); `sync` retries every time.
+	 */
 	async warm(maxWaitMs = 0): Promise<void> {
 		if (this.provider || this.embeddingConfig.kind === NO_EMBEDDING) {
+			return;
+		}
+		if (this.providerError !== undefined && Date.now() - this.providerFailedAt < PROVIDER_RETRY_MS) {
 			return;
 		}
 		const loading = this.ensureProvider();
@@ -551,8 +580,12 @@ export class PromptSearchEngine {
 			embeddingPaused: this.embeddingPaused,
 			model: this.provider?.info.displayName ?? this.store.getMeta('modelName'),
 			modelLoaded: Boolean(this.provider),
+			semantic: semanticStatus(this.embeddingState(), c.embedded > 0),
 			lastSyncAt: last ? Number(last) : undefined,
-			errors: [...(this.providerError ? [this.providerError] : []), ...this.lastErrors],
+			errors: [
+				...(this.providerError ? [`Semantic search unavailable: ${this.providerError}`] : []),
+				...this.lastErrors,
+			],
 		};
 	}
 

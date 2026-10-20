@@ -81,41 +81,53 @@ copy(commonDir, path.join(nm, 'onnxruntime-common'), rel => {
 		(p.startsWith('dist/esm') && !p.endsWith('.map'))
 	);
 });
-if (!fs.existsSync(path.join(nm, 'onnxruntime-node', 'bin', 'napi-v6', platform, arch))) {
-	throw new Error(`onnxruntime-node has no binaries for ${target}`);
+// The binding plus the shared library it links against; a VSIX missing either fails on every machine of its target.
+const staged = path.join(nm, 'onnxruntime-node', 'bin', 'napi-v6', platform, arch);
+const shared = { win32: 'onnxruntime.dll', linux: 'libonnxruntime.so.1', darwin: 'libonnxruntime.1.dylib' }[platform];
+for (const file of ['onnxruntime_binding.node', shared]) {
+	if (!fs.existsSync(path.join(staged, file))) {
+		throw new Error(`onnxruntime-node has no ${file} for ${target} (looked in ${staged})`);
+	}
 }
 
-if (bundleModel) {
-	console.log('\n== Bundling default embedding model');
-	const helper = path.join(root, 'dist', '.fetch-model.mjs');
-	await esbuild.build({
-		stdin: {
-			contents: `import { getModelSpec, DEFAULT_LOCAL_MODEL } from '../core/src/embed/models.ts';
+try {
+	await bundleAndPackage();
+} finally {
+	// The single-platform staging copy must not outlive this run, successful or not: a development build would
+	// resolve it instead of the repo's onnxruntime-node and fail to load the binding on any other platform.
+	fs.rmSync(nm, { recursive: true, force: true });
+}
+
+async function bundleAndPackage() {
+	if (bundleModel) {
+		console.log('\n== Bundling default embedding model');
+		const helper = path.join(root, 'dist', '.fetch-model.mjs');
+		await esbuild.build({
+			stdin: {
+				contents: `import { getModelSpec, DEFAULT_LOCAL_MODEL } from '../core/src/embed/models.ts';
 				import { resolveModelDir } from '../core/src/embed/modelStore.ts';
 				export async function fetch(dir) { const spec = getModelSpec(DEFAULT_LOCAL_MODEL); const d = await resolveModelDir(spec, { searchDirs: [dir], cacheDir: dir, allowDownload: true, onProgress: console.log }); return { id: spec.id, dir: d }; }`,
-			resolveDir: root,
-			loader: 'ts',
-		},
-		bundle: true,
-		platform: 'node',
-		format: 'esm',
-		outfile: helper,
-		logLevel: 'warning',
-	});
-	const { fetch: fetchModel } = await import(pathToFileURL(helper).href);
-	const r = await fetchModel(path.join(root, 'models'));
-	fs.rmSync(helper);
-	fs.rmSync(path.join(r.dir, '.verified'), { force: true });
-	console.log(`Model ${r.id} ready at ${path.relative(root, r.dir)}`);
-} else {
-	fs.rmSync(path.join(root, 'models'), { recursive: true, force: true });
-}
+				resolveDir: root,
+				loader: 'ts',
+			},
+			bundle: true,
+			platform: 'node',
+			format: 'esm',
+			outfile: helper,
+			logLevel: 'warning',
+		});
+		const { fetch: fetchModel } = await import(pathToFileURL(helper).href);
+		const r = await fetchModel(path.join(root, 'models'));
+		fs.rmSync(helper);
+		fs.rmSync(path.join(r.dir, '.verified'), { force: true });
+		console.log(`Model ${r.id} ready at ${path.relative(root, r.dir)}`);
+	} else {
+		fs.rmSync(path.join(root, 'models'), { recursive: true, force: true });
+	}
 
-console.log('\n== Packaging VSIX');
-const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const out = path.join(root, `${pkg.name}-${pkg.version}-${target}.vsix`);
-run(require.resolve('@vscode/vsce/vsce'), ['package', '--no-dependencies', '--target', target, '--out', out]);
-// The single-platform staging copy must not outlive the VSIX: a development build would resolve it instead of the
-// repo's onnxruntime-node and fail to load the binding on this machine.
-fs.rmSync(nm, { recursive: true, force: true });
-console.log(`\nCreated ${out} (${(fs.statSync(out).size / 1_048_576).toFixed(1)} MB)`);
+	console.log('\n== Packaging VSIX');
+	const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+	const out = path.join(root, `${pkg.name}-${pkg.version}-${target}.vsix`);
+	run(require.resolve('@vscode/vsce/vsce'), ['package', '--no-dependencies', '--target', target, '--out', out]);
+	console.log(`\nCreated ${out} (${(fs.statSync(out).size / 1_048_576).toFixed(1)} MB)`);
+}

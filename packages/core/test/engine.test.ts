@@ -3,7 +3,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as z from 'zod/v4';
 import { type EmbeddingProvider, l2normalize } from '../src/embed/provider.js';
+import { embeddingProviders } from '../src/embed/registry.js';
 import { PromptSearchEngine } from '../src/engine.js';
 import { sessionOpenTargets } from '../src/links.js';
 import { chunkText } from '../src/search/chunk.js';
@@ -223,6 +225,73 @@ describe('PromptSearchEngine', () => {
 			[...recent.hits.map(h => h.prompt.timestamp)].sort((a, b) => b - a),
 		);
 		await engine.close();
+	});
+
+	it('reports why semantic search is unavailable, retries on sync but not on every search', async () => {
+		let attempts = 0;
+		embeddingProviders.register({
+			id: 'broken-test-provider',
+			label: 'Broken',
+			description: 'Fails to load, like a missing native binary.',
+			local: true,
+			options: z.object({}),
+			create: () => {
+				attempts++;
+				return Promise.reject(
+					new Error('This installation of ONNX Runtime only contains binaries for win32-x64.'),
+				);
+			},
+		});
+		const engine = PromptSearchEngine.open({
+			indexDir: path.join(tmp, 'index'),
+			sources: fixtureSources(),
+			embedding: { kind: 'broken-test-provider' },
+		});
+		engines.push(engine);
+
+		const synced = await engine.sync();
+		expect(attempts).toBe(1);
+		expect(synced.semantic).toEqual({
+			state: 'failed',
+			reason: 'This installation of ONNX Runtime only contains binaries for win32-x64.',
+		});
+		expect(synced.errors).toEqual([
+			'Semantic search unavailable: This installation of ONNX Runtime only contains binaries for win32-x64.',
+		]);
+
+		// Keyword results still come back, carrying the reason; the failed load is not repeated per search.
+		const res = await engine.search('tree view');
+		expect(res.hits.length).toBeGreaterThan(0);
+		expect(res.semanticUnavailable).toBe(true);
+		expect(res.semantic.state).toBe('failed');
+		await engine.search('retry policy');
+		expect((await engine.explore('tree view')).semantic.state).toBe('failed');
+		expect(attempts).toBe(1);
+		expect(engine.status().semantic.state).toBe('failed');
+		expect(engine.status().errors[0]).toMatch(/^Semantic search unavailable: /);
+
+		// An explicit sync tries again (the user may have fixed the installation).
+		await engine.sync();
+		expect(attempts).toBe(2);
+		await engine.close();
+	});
+
+	it('distinguishes embeddings that are off from ones still pending', async () => {
+		const off = open();
+		await off.sync();
+		const res = await off.search('tree view');
+		expect(res.semanticUnavailable).toBe(true);
+		expect(res.semantic).toEqual({ state: 'off' });
+		expect(off.status().semantic).toEqual({ state: 'off' });
+		await off.close();
+
+		// A loaded model with nothing embedded yet: pending, not failed.
+		const fresh = open(new FakeEmbedder());
+		await fresh.sync({ embed: false });
+		expect((await fresh.search('tree view')).semantic).toEqual({ state: 'pending' });
+		await fresh.sync();
+		expect((await fresh.search('tree view')).semantic).toEqual({ state: 'ready' });
+		await fresh.close();
 	});
 
 	it('works lexical-only without a model and removes deleted sessions', async () => {

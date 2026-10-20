@@ -16,6 +16,7 @@ npm run build -w packages/cli                                # packages/cli/dist
 node packages/vscode/scripts/build.mjs                       # dist/{extension,host,mcp,webview}.js
 node packages/vscode/scripts/package.mjs --target win32-x64  # platform VSIX; add --bundle-model for an offline VSIX
 node packages/vscode/test/integration/runTest.mjs            # real VS Code against the user's real history (read-only), temp index
+node packages/cli/dist/cli.js doctor                         # platform, native runtime, model, one embedding; exit 1 when semantic search is unavailable
 npm run bench                                                # retrieval benchmark; needs gitignored packages/core/bench/data/*.local.json
 node scripts/release.mjs <version|patch|minor|major>         # lockstep version bump + CHANGELOG + commit + tag; pushing the tag runs release.yml
 ```
@@ -30,7 +31,7 @@ npm workspaces, TypeScript throughout, one Biome config. `packages/core` ships a
   - `engine.ts`: `PromptSearchEngine`, the facade every surface calls. `sync()` runs every registered source, then embeds.
   - `registry.ts`: the generic `Registry` + `parseOptions` (zod). Every pluggable concept goes through one.
   - `sources/`: `base.ts` is the plugin contract; `registry.ts` registers the built-ins (`copilot`, `vscode-chat`, `agent-host`, `claude-code`, `codex`); `sessionFiles.ts` is the shared loop for whole-file logs.
-  - `embed/`: provider registry (`local` ONNX, `openai-compatible`, `hashed`, `none`), pinned model specs + `model.json` manifests, the model store.
+  - `embed/`: provider registry (`local` ONNX, `openai-compatible`, `hashed`, `none`), pinned model specs + `model.json` manifests, the model store. `ort.ts` loads onnxruntime-node and turns loader failures into a diagnosis (`NativeRuntimeError`: wrong-architecture build, missing VC++ runtime, unsupported platform).
   - `store.ts`: the SQLite index (`node:sqlite`, FTS5, chunks, embedding BLOBs, writer lease, migrations).
   - `search/`: query language (`query.ts`), hybrid ranking (`rank.ts`), topics, fork lineage (`corpus.ts`). `searcher.ts` has two paths: `search` for the quick pick, `explore` for the Explorer.
   - `host.ts` / `protocol.ts`: the child process the extension talks to. `mcp.ts`: the MCP server.
@@ -47,6 +48,7 @@ npm workspaces, TypeScript throughout, one Biome config. `packages/core` ships a
 - **MCP stdout is the protocol.** Nothing reachable from `serveMcp` may print to stdout. Tools stay read-only (`readOnlyHint`) and return plain text for a model, including the ids the next call needs.
 - **Privacy.** No telemetry. Network only for the pinned model download and the opt-in OpenAI-compatible embedder, both through an injectable `fetch`. API keys are read from a user-named env var, never stored or logged (`OpenAICompatibleEmbeddingProvider.toJSON` redacts). The webview has a strict CSP (crypto nonce) and renders prompt text as text, never HTML/Markdown.
 - **Ranking is measured.** Change `DEFAULT_RANKING` only with before/after benchmark numbers.
+- **Degradation is announced, never silent.** When the model cannot load, results still come back (keywords) but carry `semantic: { state: 'failed', reason }`; every surface shows the reason. The engine never switches providers on its own (that would change the index's vectors and hide the problem); the user is offered `hashed`. Load the native runtime before fetching a model.
 
 ## Conventions
 
@@ -70,6 +72,6 @@ npm workspaces, TypeScript throughout, one Biome config. `packages/core` ships a
 - `~/.promptback` is the user's live index. Inspect it read-only (`new DatabaseSync(file, { readOnly: true })`); never delete or rewrite it.
 - If `promptback` is npm-linked, it runs this checkout's `packages/cli/dist/cli.js`, and so does any `promptback mcp` entry in `~/.copilot/mcp-config.json`. A broken CLI build then breaks the user's MCP tools in every agent session.
 - npm ≥ 11.19 blocks dependency install scripts; `allowScripts` in the root `package.json` denies ours on purpose (onnxruntime ships CPU binaries; esbuild uses optional packages). Older npm runs onnxruntime's postinstall, which downloads CUDA binaries on linux-x64 unless `ONNXRUNTIME_NODE_INSTALL=skip` (CI sets it).
-- onnxruntime-node 1.30 ships win32-x64/arm64, linux-x64/arm64 and darwin-arm64 only; `package.mjs` refuses other targets. Intel Macs get the `hashed` provider or keyword search.
+- onnxruntime-node 1.30 ships win32-x64/arm64, linux-x64/arm64 and darwin-arm64 only (`ONNX_RUNTIME_TARGETS`); `package.mjs` refuses other targets and stages one platform's binaries per VSIX. VS Code installs a VSIX for the wrong architecture without complaint; the result is `Cannot find module '../bin/napi-v6/<platform>/<arch>/onnxruntime_binding.node'`, which `ort.ts` turns into "only contains binaries for win32-x64, not win32-arm64". Windows builds of onnxruntime.dll link the VC++ runtime (MSVCP140, VCRUNTIME140); without it the load fails with "The specified module could not be found". Intel Macs get the `hashed` provider or keyword search. `ort.test.ts` runs a real inference on every CI cell, including the arm64 runners.
 - Biome's unsafe fixes change semantics (`Boolean(x)` drops narrowing, `noConsole` deletes calls, hook deps get rewritten). Review every `--unsafe` diff.
 - The Agents window runs only extensions listed in `extensions.supportAgentsWindow`, uses its own profile and has no status bar or activity bar; that's why the Explorer is a custom editor with its own keybinding.

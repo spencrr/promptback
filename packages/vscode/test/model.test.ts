@@ -41,6 +41,7 @@ function result(rows: ExploreRow[], freeText = 'q', topics: Topic[] = []): Explo
 		freeText,
 		mode: 'hybrid',
 		semanticUnavailable: false,
+		semantic: { state: 'ready' },
 		revision: '1',
 		tookMs: 1,
 		rows,

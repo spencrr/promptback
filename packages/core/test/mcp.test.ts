@@ -112,6 +112,10 @@ describe('MCP server', () => {
 		const found = await call('search_prompts', { query: 'retry_policy' });
 		expect(found.text).toContain('Fix the flaky retry_policy test');
 		expect(found.text).toContain('owner/webapp · main · Copilot CLI');
+		// Embeddings are off in this index; the model reading the result is told so, not left guessing.
+		expect(found.text).toMatch(
+			/^1 prompt for "retry_policy", best first \(keyword matches only; semantic search is turned off\):/,
+		);
 
 		const prompt = await call('get_prompt', { id: /prompt: (\S+)/.exec(found.text)![1]! });
 		expect(prompt.text).toContain('by the user');
@@ -142,6 +146,8 @@ describe('MCP server', () => {
 		const recent = await call('list_recent_sessions');
 		expect(recent.text.indexOf('Design doc')).toBeGreaterThan(-1);
 		expect(recent.text.indexOf('Design doc')).toBeLessThan(recent.text.indexOf('Flaky tests'));
-		expect((await call('index_status')).text).toContain('Prompts: 4 in 2 sessions');
+		const status = (await call('index_status')).text;
+		expect(status).toContain('Prompts: 4 in 2 sessions');
+		expect(status).toContain('Semantic search: off;');
 	});
 });

@@ -110,8 +110,10 @@ describe('promptback CLI (built binary)', () => {
 		const search = JSON.parse((await cli('search', 'flaky retry', '--json', '--no-model')).stdout) as {
 			hits: { prompt: { id: string; text: string }; session: { client: string } }[];
 			semanticUnavailable: boolean;
+			semantic: { state: string };
 		};
 		expect(search.semanticUnavailable).toBe(true);
+		expect(search.semantic).toEqual({ state: 'off' });
 		expect(search.hits).toHaveLength(1);
 		expect(search.hits[0]!.session.client).toBe('github/cli');
 
@@ -137,6 +139,22 @@ describe('promptback CLI (built binary)', () => {
 		// Re-indexing unchanged history is a cache hit: nothing is re-read or re-added.
 		const again = await cli('index', '--no-model');
 		expect(again.stdout.trim()).toMatch(/^\+0 \/ -0 prompts/);
+	});
+
+	it('doctor reports the semantic-search state and exits 1 when it is unavailable', async () => {
+		const off = await cli('doctor', '--no-model');
+		expect(off.stdout).toMatch(/^platform\s+(win32|linux|darwin)-\w+, Node v\d+/m);
+		expect(off.stdout).toMatch(/^sources\s+copilot on, /m);
+		expect(off.stdout).toMatch(/^semantic\s+off \(--no-model\)/m);
+
+		// No model in the temp home and downloads off: the real runtime is probed, then the model is reported missing.
+		await expect(cli('doctor', '--no-download')).rejects.toMatchObject({
+			code: 1,
+			stdout: expect.stringMatching(/^semantic\s+UNAVAILABLE: .*(downloads are disabled|no build for)/m),
+		});
+		const human = await cli('search', 'tree view', '--no-download');
+		expect(human.stderr).toMatch(/^\(keyword matches only; semantic search unavailable: .*\.\)$/m);
+		expect(human.stdout).toMatch(/1\. Write a design doc for the tree view/);
 	});
 
 	it('fails clearly on an unknown command and a missing prompt', async () => {

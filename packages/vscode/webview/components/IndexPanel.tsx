@@ -62,7 +62,9 @@ export function IndexPanel({ state, onClose }: { state: IndexState; onClose: () 
 							<span class="muted">Model</span>
 							<span>
 								{s.model ?? 'none'}
-								{s.model && !s.modelLoaded ? <span class="muted"> (loads on first search)</span> : null}
+								{s.model && !s.modelLoaded && s.semantic.state !== 'failed' ? (
+									<span class="muted"> (loads on first search)</span>
+								) : null}
 							</span>
 							<span class="muted">Last scan</span>
 							<span>
@@ -72,6 +74,13 @@ export function IndexPanel({ state, onClose }: { state: IndexState; onClose: () 
 							<span class="muted">Index</span>
 							<span title={s.indexPath}>{(s.indexBytes / 1_048_576).toFixed(1)} MB</span>
 						</div>
+						{s.semantic.state === 'failed' ? (
+							<div class="banner error">
+								<Icon name="warning" />
+								Semantic search is unavailable: {s.semantic.reason} Keyword search still works; the
+								hashed embeddings below need no native code.
+							</div>
+						) : null}
 						{working ? (
 							<div class="working">
 								<span class="spinner" />
