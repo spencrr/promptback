@@ -20,7 +20,7 @@ packages/vscode/models/
 # Secrets and local configuration: never committed
 .env
 .env.*
-.npmrc
+packages/**/.npmrc
 
 # Editor and OS noise (shared editor recommendations are kept)
 .vscode/*

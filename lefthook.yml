@@ -7,9 +7,10 @@ pre-commit:
       # Lint, format and import order on the staged files only; fixes are written and re-staged.
       run: npx biome check --staged --no-errors-on-unmatched --write
       stage_fixed: true
-    - name: versions
-      # The five version fields must move together (see packages/core/test/versions.test.ts).
-      glob: "{package.json,packages/*/package.json,packages/cli/server.json}"
+    - name: metadata
+      # The five version fields must move together, and neither .npmrc nor the lockfile may pin a registry
+      # (see packages/core/test/versions.test.ts).
+      glob: "{package.json,packages/*/package.json,packages/cli/server.json,package-lock.json,.npmrc}"
       run: npx vitest run packages/core/test/versions.test.ts --reporter=dot
 
 pre-push:

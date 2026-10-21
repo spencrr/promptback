@@ -11,6 +11,17 @@ npm run check     # typecheck + lint + tests; what CI runs
 
 Tests are offline and never read your own history. The git hooks run Biome on staged files when you commit and the typecheck when you push; skip one with `LEFTHOOK=0 git commit`.
 
+## Package registries
+
+Nothing here assumes the public npm registry. If your organization routes npm through a package proxy (an Azure Artifacts upstream, Artifactory, Verdaccio, …), keep that configuration where it belongs, in your user-level `~/.npmrc` or your organization's managed npm defaults, and `npm ci` just works: the committed [`.npmrc`](.npmrc) sets `omit-lockfile-registry-resolved`, so `package-lock.json` pins versions and integrity hashes but no registry URL, and every contributor's installs go through whatever registry their own npm configuration names (measured: no slower than with URLs).
+
+Two things keep it that way, both checked by `npm run check` and by the pre-commit hook:
+
+- The repository's `.npmrc` never names a registry or carries credentials. A repository-level `registry=` would override your organization's managed default (and fail where public registries are network-isolated).
+- No lockfile entry resolves from a private feed. If a tool writes such `resolved` URLs anyway, `npm install --package-lock-only` strips them again.
+
+Proxies commonly hold new package versions back for a few days; Dependabot's 7-day cooldown in [`.github/dependabot.yml`](.github/dependabot.yml) matches that window, so its PRs install on managed devices too. Everything else the toolchain fetches is pinned and opt-out-able: the embedding model (first use, from a pinned Hugging Face revision; `promptback.embedding.modelDir` or `package.mjs --bundle-model` for machines that cannot reach it, `hashed` for no model at all) and VS Code for the integration test. No dependency needs an install script (`npm ci --ignore-scripts` is what CI runs), so nothing reaches for NuGet or GitHub releases during install.
+
 ## Changes
 
 - Open an issue first for anything beyond a small fix, especially a new prompt source or a change to ranking.

@@ -44,3 +44,43 @@ describe('release metadata', () => {
 		}
 	});
 });
+
+// `npm ci` must work from the public registry and through an organization's package proxy alike, so the repository
+// pins no registry anywhere: not in .npmrc, and not in the lockfile's `resolved` URLs (which npm writes from
+// whichever registry served a package, unless told not to).
+describe('install metadata', () => {
+	it('keeps the committed .npmrc free of registries and credentials, and omits lockfile registry URLs', () => {
+		const lines = fs
+			.readFileSync(path.join(root, '.npmrc'), 'utf8')
+			.split(/\r?\n/)
+			.map(l => l.trim())
+			.filter(l => l && !l.startsWith(';') && !l.startsWith('#'));
+		expect(lines).toContain('omit-lockfile-registry-resolved=true');
+		for (const line of lines) {
+			const key = line.split('=')[0]!.trim();
+			expect(line, 'scoped registry or auth line').not.toMatch(/^(\/\/|@)/);
+			expect(
+				['registry', 'always-auth', '_auth', '_authToken', 'username', '_password', 'email'],
+				line,
+			).not.toContain(key);
+		}
+	});
+
+	it('lets every lockfile entry install from the public registry (no private feed URLs)', () => {
+		const lock = read('package-lock.json') as {
+			packages: Record<string, { resolved?: string; link?: boolean; integrity?: string }>;
+		};
+		for (const [name, p] of Object.entries(lock.packages)) {
+			// The root, the workspaces themselves and the links to them are local, not fetched.
+			if (!name.startsWith('node_modules/') || p.link) {
+				continue;
+			}
+			expect(p.integrity, `${name} has an integrity hash`).toBeDefined();
+			if (p.resolved !== undefined) {
+				expect(p.resolved, `${name} resolves from a private feed; run npm install --package-lock-only`).toMatch(
+					/^https:\/\/registry\.npmjs\.org\//,
+				);
+			}
+		}
+	});
+});
