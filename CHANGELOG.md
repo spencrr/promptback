@@ -8,11 +8,12 @@ All notable changes to Promptback are recorded here. The format follows [Keep a 
 - Claude Code (`~/.claude/projects`) and OpenAI Codex (`~/.codex/sessions`) as prompt sources, with `src:`/`client:` filters, source-specific resume commands and a sources roadmap.
 - Plugin registries with validated options for prompt sources, embedding providers and local models; `model.json` manifests for custom ONNX models.
 - `hashed` embedding provider: word-overlap vectors with no model or native code, for platforms without onnxruntime binaries.
-- `promptback sources` and `promptback --version`; `server.json` for the MCP registry (`dev.spencrr/promptback`).
+- `promptback sources` and `promptback --version`; `server.json` for the MCP registry (`io.github.spencrr/promptback`, the namespace GitHub OIDC grants).
 - Git hooks (lefthook): Biome on staged files at commit, typecheck on push.
 - `promptback doctor`: checks platform support, the native ONNX runtime, the model and one embedding; exit code 1 when semantic search is unavailable.
 - Results and status carry a `semantic` state (`ready`, `pending`, `off`, `failed` with the reason), and every surface shows the reason semantic search did not run: CLI stderr, the first line of MCP results, an Explorer banner, the Index panel, and a one-time VS Code warning with **Use hashed embeddings**.
 - CI runs the tests on Windows and Linux arm64 as well, including a real ONNX inference.
+- Release pipeline: one tag builds every artifact, publishes the GitHub Release and, per repository variable, npm, the VS Code Marketplace, Open VSX and the MCP registry, all with GitHub OIDC (no stored tokens). Odd minor versions are pre-releases. `scripts/release.mjs --push`; `package.mjs --pre-release`.
 
 ### Changed
 - Renamed from Yesterprompt to **Promptback**: `PROMPTBACK_HOME`, `~/.promptback`, `promptback.*` settings, extension id `spencrr.promptback-vscode`, CLI `promptback`.

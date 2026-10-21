@@ -25,4 +25,21 @@ A source is one plugin file plus a fixture test. Start from `packages/core/src/s
 
 ## Releases
 
-Maintainers cut releases with `node scripts/release.mjs <version>` and push the tag; `.github/workflows/release.yml` builds and publishes the GitHub Release.
+One version for every package. Even minors (`0.8.x`) are releases, odd minors (`0.7.x`) pre-releases (the Marketplace convention); the tag's parity picks the channel everywhere.
+
+```sh
+git switch main && git pull
+node scripts/release.mjs 0.8.0 --dry-run   # shows the files it would touch
+node scripts/release.mjs 0.8.0 --push      # bumps 5 version fields + CHANGELOG, commits, tags v0.8.0, pushes
+```
+
+`.github/workflows/release.yml` then: verifies the tag points at `main` and matches every version field → `npm run check` → builds the CLI tarball, five VSIXes and `SHA256SUMS.txt` → publishes the GitHub Release (draft, assets, publish; compatible with immutable releases) → publishes to each registry whose repository variable is `true`. The variables are the publishing hold: with none set, a tag produces only the GitHub Release. Run the workflow by hand (**Actions → Release → Run workflow**) on any branch for a dry run that builds everything and publishes nothing.
+
+| Variable | Registry | Auth | One-time setup |
+|---|---|---|---|
+| `PUBLISH_NPM` | npm `promptback` | trusted publishing (GitHub OIDC) | First publish by hand (`npm publish -w packages/cli --access public`), then **Package → Settings → Trusted publishing**: owner `spencrr`, repo `promptback`, workflow `release.yml`. Provenance switches on by itself once the repository is public. |
+| `PUBLISH_MARKETPLACE` | VS Code Marketplace, publisher `spencrr` | `vsce publish --oidc` | Create the publisher at marketplace.visualstudio.com/manage. The Marketplace's trusted-publishing backend was still rolling out in October 2026 (microsoft/vscode-vsce#1275); until it accepts `--oidc`, publish by hand with a PAT from a machine, never from CI. |
+| `PUBLISH_OPENVSX` | Open VSX, namespace `spencrr` | trusted publishing (GitHub OIDC) | Eclipse account, sign the publisher agreement, `npx ovsx create-namespace spencrr -p <token>`, then **Settings → Trusted Publishers**: owner, repo, workflow `release.yml`. |
+| `PUBLISH_MCP` | MCP registry `io.github.spencrr/promptback` | GitHub OIDC (`io.github.spencrr/*`) | None; runs after npm because the registry fetches `promptback@<version>` from npm and checks its `mcpName`. |
+
+Every publish step is idempotent for a re-run (`--skip-duplicate`; npm and the MCP registry reject the duplicate, which the job reports). Before the first tag, turn on **Settings → General → Immutable releases**.

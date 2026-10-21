@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "dev.spencrr/promptback",
+  "name": "io.github.spencrr/promptback",
   "title": "Promptback",
   "description": "Read-only search over the prompts this user sent to AI coding agents (Copilot, Claude Code, Codex, VS Code Chat). Local index; nothing leaves the machine.",
   "repository": {

@@ -4,10 +4,12 @@
 //   2. onnxruntime-node (+ onnxruntime-common) copied next to the bundle, pruned to one platform
 //   3. optionally the default embedding model (pinned revision, sha256-verified) for offline installs
 //   4. vsce package --target <platform>
-// Usage: node scripts/package.mjs [--target <platform>-<arch>] [--bundle-model]
+// Usage: node scripts/package.mjs [--target <platform>-<arch>] [--bundle-model] [--pre-release]
 // Targets are the platforms onnxruntime-node ships binaries for: win32-x64, win32-arm64, linux-x64, linux-arm64,
 // darwin-arm64. By default the model is downloaded on first use (33 MB, hash-verified) instead of shipping in
-// every update; pass --bundle-model for an offline-capable VSIX.
+// every update; pass --bundle-model for an offline-capable VSIX. --pre-release marks the VSIX for the Marketplace's
+// pre-release channel (release.yml passes it for odd minor versions); `vsce publish --pre-release` refuses a VSIX
+// packaged without it.
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -29,6 +31,7 @@ if (!TARGETS.includes(target)) {
 }
 const [platform, arch] = target.split('-');
 const bundleModel = args.includes('--bundle-model');
+const preRelease = args.includes('--pre-release');
 
 // Scripts run with this Node binary and resolved entry points: no shell, no PATH lookup.
 const run = (script, scriptArgs) =>
@@ -128,6 +131,14 @@ async function bundleAndPackage() {
 	console.log('\n== Packaging VSIX');
 	const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 	const out = path.join(root, `${pkg.name}-${pkg.version}-${target}.vsix`);
-	run(require.resolve('@vscode/vsce/vsce'), ['package', '--no-dependencies', '--target', target, '--out', out]);
+	run(require.resolve('@vscode/vsce/vsce'), [
+		'package',
+		'--no-dependencies',
+		'--target',
+		target,
+		'--out',
+		out,
+		...(preRelease ? ['--pre-release'] : []),
+	]);
 	console.log(`\nCreated ${out} (${(fs.statSync(out).size / 1_048_576).toFixed(1)} MB)`);
 }

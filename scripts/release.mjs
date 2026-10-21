@@ -4,9 +4,13 @@
  * Bumps every version field in lockstep, moves the CHANGELOG's "Unreleased" section under the new version, commits
  * and tags. Pushing the tag starts .github/workflows/release.yml.
  *
- *   node scripts/release.mjs 0.7.0            # exact version
+ *   node scripts/release.mjs 0.8.0            # exact version
  *   node scripts/release.mjs patch|minor|major
- *   node scripts/release.mjs 0.7.0 --dry-run  # show the changes, write nothing
+ *   node scripts/release.mjs 0.8.0 --dry-run  # show the changes, write nothing
+ *   node scripts/release.mjs 0.8.0 --push     # also push the commit and the tag
+ *
+ * Pre-releases follow the Marketplace convention: an odd minor (0.7.x, 0.9.x) is a pre-release, an even minor a
+ * release. release.yml reads the parity of the tag and publishes to the matching channel, so there is no flag.
  */
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -16,9 +20,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
+const push = args.includes('--push');
 const spec = args.find(a => !a.startsWith('--'));
 if (!spec) {
-	console.error('Usage: node scripts/release.mjs <version | patch | minor | major> [--dry-run]');
+	console.error('Usage: node scripts/release.mjs <version | patch | minor | major> [--dry-run] [--push]');
 	process.exit(2);
 }
 
@@ -48,7 +53,12 @@ if (git('tag', '--list', `v${next}`) !== '') {
 	process.exit(1);
 }
 
-console.log(`${current} → ${next}${dryRun ? ' (dry run)' : ''}`);
+const preRelease = isPreRelease(next);
+console.log(`${current} → ${next} (${preRelease ? 'pre-release: odd minor' : 'release'}${dryRun ? ', dry run' : ''})`);
+if (git('rev-parse', '--abbrev-ref', 'HEAD') !== 'main') {
+	console.error('Release from main (release.yml publishes only tags that point at main).');
+	process.exit(1);
+}
 
 // Version fields: textual replaces keep each file's formatting untouched. server.json carries the version twice
 // (the server and its npm package), both equal to the current version.
@@ -100,7 +110,19 @@ execFileSync(
 git('add', '--', ...edits.keys(), 'package-lock.json');
 git('commit', '-m', `Release ${next}`);
 git('tag', '-a', `v${next}`, '-m', `Promptback ${next}`);
-console.log(`\nCommitted and tagged v${next}. Push with:\n  git push origin main v${next}`);
+if (push) {
+	execFileSync('git', ['push', 'origin', 'main', `v${next}`], { cwd: root, stdio: 'inherit' });
+	console.log(
+		`\nPushed v${next}; release.yml is running: https://github.com/spencrr/promptback/actions/workflows/release.yml`,
+	);
+} else {
+	console.log(`\nCommitted and tagged v${next}. Push with:\n  git push origin main v${next}`);
+}
+
+/** Marketplace convention: odd minor = pre-release channel, even minor = release channel. */
+function isPreRelease(version) {
+	return Number(version.split('.')[1]) % 2 === 1;
+}
 
 function bump(version, how) {
 	const [major, minor, patch] = version.split('.').map(Number);

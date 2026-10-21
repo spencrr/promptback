@@ -15,7 +15,7 @@ Semantic search over every prompt you've sent to your AI coding agents: **GitHub
 | Package | What it is | Where it ships |
 |---|---|---|
 | [`packages/vscode`](packages/vscode/README.md) | The VS Code extension (`spencrr.promptback-vscode`): Prompt Explorer, quick search, sidebar, MCP registration | VS Code Marketplace / Open VSX, one VSIX per platform |
-| [`packages/cli`](packages/cli/README.md) | `promptback`: index, search and inspect from a terminal; `promptback mcp` serves the tools over stdio | npm (`promptback`) and the MCP registry (`dev.spencrr/promptback`) |
+| [`packages/cli`](packages/cli/README.md) | `promptback`: index, search and inspect from a terminal; `promptback mcp` serves the tools over stdio | npm (`promptback`) and the MCP registry (`io.github.spencrr/promptback`) |
 | [`packages/core`](packages/core/README.md) | Ingestion, SQLite index, ranking, embeddings, sources and the MCP server. No VS Code dependency | Bundled into the two above; not published on its own |
 
 The three share one index, so whatever indexed your history last is what every surface searches.

@@ -24,7 +24,7 @@
   "license": "MIT",
   "author": "Spencer Schoenberg",
   "type": "module",
-  "mcpName": "dev.spencrr/promptback",
+  "mcpName": "io.github.spencrr/promptback",
   "bin": {
     "promptback": "dist/cli.js"
   },
