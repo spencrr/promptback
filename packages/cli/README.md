@@ -5,7 +5,7 @@
 Reads the local history of **GitHub Copilot** (Agents window, Copilot CLI, autopilot), **Claude Code**, **OpenAI Codex** and the **VS Code Chat** panel. Everything stays on your machine: the index is a SQLite file in `~/.promptback`, prompts are embedded locally with a small ONNX model, and the only network call is the one-time, SHA-256-verified model download.
 
 ```sh
-npm install -g promptback          # Node >= 22.13
+npm install -g promptback          # Node >= 22.16
 promptback index                   # scan and embed your history (first run downloads the model, 33 MB)
 promptback search "the prompt about the retry policy" --limit 5
 promptback search "tree view design doc repo:PyRIT after:2026-09 client:cli"

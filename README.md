@@ -22,7 +22,7 @@ The three share one index, so whatever indexed your history last is what every s
 
 ## Quick start
 
-Requires **Node ≥ 22.13** (for `node:sqlite`) and npm ≥ 10. Everything below works offline except the one-time model download.
+Requires **Node ≥ 22.16** (for `node:sqlite` with FTS5) and npm ≥ 10. Everything below works offline except the one-time model download.
 
 ```sh
 git clone https://github.com/spencrr/promptback.git

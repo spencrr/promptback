@@ -5,7 +5,7 @@ Thanks for helping. This file is the short version; [AGENTS.md](AGENTS.md) has t
 ## Setup
 
 ```sh
-npm ci            # Node >= 22.13, npm >= 10; also installs the git hooks (lefthook)
+npm ci            # Node >= 22.16, npm >= 10; also installs the git hooks (lefthook)
 npm run check     # typecheck + lint + tests; what CI runs
 ```
 

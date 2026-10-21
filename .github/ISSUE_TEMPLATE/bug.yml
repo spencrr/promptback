@@ -34,7 +34,7 @@ body:
     attributes:
       label: Versions
       description: "`promptback --version` or the extension version; OS; Node (`node --version`); VS Code (Help → About) if relevant"
-      placeholder: promptback 0.6.0 · Windows 11 · Node 22.13.0 · VS Code 1.141.1
+      placeholder: promptback 0.6.0 · Windows 11 · Node 22.16.0 · VS Code 1.141.1
     validations:
       required: true
   - type: textarea

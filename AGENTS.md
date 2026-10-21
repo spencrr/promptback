@@ -7,7 +7,7 @@ You're working on **Promptback**: local-first semantic search over every prompt 
 ## Commands
 
 ```
-npm ci                                                       # Node >= 22.13 (node:sqlite), npm >= 10; installs the git hooks (lefthook)
+npm ci                                                       # Node >= 22.16 (node:sqlite with FTS5), npm >= 10; installs the git hooks (lefthook)
 npm run check                                                # typecheck + lint + test: run before finishing
 npm run typecheck                                            # 4 tsconfigs: strict, noUnused*, noUncheckedIndexedAccess, verbatimModuleSyntax
 npm run lint                                                 # Biome (lint + format + import order); `npm run lint:fix` applies safe fixes
@@ -63,7 +63,7 @@ npm workspaces, TypeScript throughout, one Biome config. `packages/core` ships a
 - User-visible changes update `README.md`, `packages/cli/README.md` (npm page) and `packages/vscode/README.md` (Marketplace page). Design decisions go in `docs/DESIGN.md`.
 - No `Co-authored-by` trailers in commits.
 - Git hooks (`lefthook.yml`): Biome on staged files at commit, `npm run typecheck` at push. `LEFTHOOK=0` skips once. They are installed by the root `prepare` script, so `npm ci --ignore-scripts` needs a manual `npx lefthook install`.
-- Node policy: `engines.node` is the floor (22.13, Maintenance LTS until 2027-04-30), `.node-version` and `@types/node` track it, and the CI matrix adds the newer LTS lines. Bump the floor when 22 reaches end of life or a dependency forces it; Dependabot is told not to bump `@types/node` majors on its own.
+- Node policy: `engines.node` is the floor (22.16, the first 22.x whose `node:sqlite` has FTS5; Maintenance LTS until 2027-04-30), `.node-version` and `@types/node` track it, and the CI matrix adds the newer LTS lines. Bump the floor when 22 reaches end of life or a dependency forces it; Dependabot is told not to bump `@types/node` majors on its own.
 - Releases: odd minor = pre-release, even = release (Marketplace convention, applied to every registry). `release.yml` publishes to a registry only when its `PUBLISH_*` repository variable is `true`; none are set while publishing is on hold. All registry auth is GitHub OIDC; the MCP server is `io.github.spencrr/promptback` for that reason. See CONTRIBUTING.md → Releases.
 - Dependencies: Dependabot runs weekly with a 7-day cooldown; dev-tooling minors/patches arrive as one grouped PR, majors (TypeScript, Vitest, Preact, vsce) are taken deliberately. Actions are pinned to commit SHAs. `npm ci --ignore-scripts` in CI; no dependency may need an install script.
 
