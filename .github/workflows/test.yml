@@ -1,0 +1,74 @@
+name: Test
+
+# The lint, typecheck and test jobs, shared by ci.yml (every push and pull request) and release.yml (every tag), so a
+# release is tested by the same steps as any other commit, in its own run.
+on:
+  workflow_call:
+    inputs:
+      lean:
+        description: >-
+          Run the lean matrix (every OS and architecture once, every Node line on Linux) instead of the full one.
+          Pull requests use it; pushes to main and tags run everything.
+        type: boolean
+        default: false
+
+permissions: {}
+
+env:
+  # onnxruntime-node's postinstall would download CUDA binaries on linux-x64 with npm < 11.19 (newer npm blocks
+  # install scripts unless package.json allows them, which it does not). The CPU binaries ship in the package.
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  lint:
+    name: Lint and typecheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+    steps:
+      # Nothing in these workflows pushes, so no job keeps the checkout's token around.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      # No dependency needs an install script (see allowScripts in package.json); skipping them everywhere closes
+      # the usual npm supply-chain vector regardless of the runner's npm version.
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run typecheck
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read # checkout
+    strategy:
+      fail-fast: false
+      # Node: the floor exactly (a bare "22" resolves to the newest 22.x and would hide a too-low floor), then the LTS
+      # lines. arm64: macos-latest already is; the Linux and Windows arm64 cells prove the native onnxruntime binding
+      # loads and runs there (packages/core/test/ort.test.ts). Billed minutes weigh macOS 10x and Windows 2x, so the
+      # lean set costs about half of the full one.
+      matrix:
+        include: ${{ fromJSON(inputs.lean && '[
+            {"os":"ubuntu-latest","node":"22.16.0"}, {"os":"ubuntu-latest","node":"24"}, {"os":"ubuntu-latest","node":"26"},
+            {"os":"windows-latest","node":"22.16.0"}, {"os":"macos-latest","node":"24"},
+            {"os":"ubuntu-24.04-arm","node":"24"}, {"os":"windows-11-arm","node":"24"}
+          ]' || '[
+            {"os":"ubuntu-latest","node":"22.16.0"}, {"os":"ubuntu-latest","node":"24"}, {"os":"ubuntu-latest","node":"26"},
+            {"os":"windows-latest","node":"22.16.0"}, {"os":"windows-latest","node":"24"}, {"os":"windows-latest","node":"26"},
+            {"os":"macos-latest","node":"22.16.0"}, {"os":"macos-latest","node":"24"}, {"os":"macos-latest","node":"26"},
+            {"os":"ubuntu-24.04-arm","node":"24"}, {"os":"windows-11-arm","node":"24"}
+          ]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test

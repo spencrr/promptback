@@ -44,7 +44,19 @@ node scripts/release.mjs 0.8.0 --dry-run   # shows the files it would touch
 node scripts/release.mjs 0.8.0 --push      # bumps 5 version fields + CHANGELOG, commits, tags v0.8.0, pushes
 ```
 
-`.github/workflows/release.yml` then: verifies the tag points at `main` and matches every version field → `npm run check` → builds the CLI tarball, five VSIXes and `SHA256SUMS.txt` → publishes the GitHub Release (draft, assets, publish; compatible with immutable releases) → publishes to each registry whose repository variable is `true`. The variables are the publishing hold: with none set, a tag produces only the GitHub Release. Run the workflow by hand (**Actions → Release → Run workflow**) on any branch for a dry run that builds everything and publishes nothing.
+`.github/workflows/release.yml` then runs four stages: **check** (the tag is on `main` or a `release/*` branch and matches every version field) → **checks** (lint, typecheck and the full test matrix from `test.yml`, the same jobs CI runs, so the release is tested in its own right) → **build** (CLI tarball and five VSIXes, read-only token, no package cache) → **publish**. The publish job runs no build tooling at all: it downloads the artifacts, attests their provenance (`actions/attest-build-provenance`), creates the GitHub Release (draft → assets → publish, which is what release immutability needs) and publishes to each registry whose repository variable is `true`. It is the only job with a write token or an OIDC token, and it waits in the `release` environment for the maintainer's approval (**Actions → the run → Review deployments**): a leaked push credential can start a build, not a publish.
+
+The variables are the publishing hold: with none set, a tag produces only the GitHub Release. There is no manual trigger; CI's **Build artifacts** job uploads the same tarball and VSIXes on every push, which is the dry run.
+
+Patch releases normally come from `main`. When `main` carries unfinished work: `git switch -c release/0.8 v0.8.0`, cherry-pick with `-x`, `node scripts/release.mjs patch --push` from that branch, and copy the changelog section to `main` by hand.
+
+After a release, anyone can check a downloaded file against what was published and how it was built (update `gh` if the commands are missing):
+
+```sh
+gh release verify v0.8.0                                     # immutable and attested
+gh release verify-asset v0.8.0 promptback-vscode-0.8.0-win32-x64.vsix
+gh attestation verify promptback-vscode-0.8.0-win32-x64.vsix --owner spencrr
+```
 
 | Variable | Registry | Auth | One-time setup |
 |---|---|---|---|
@@ -53,4 +65,6 @@ node scripts/release.mjs 0.8.0 --push      # bumps 5 version fields + CHANGELOG,
 | `PUBLISH_OPENVSX` | Open VSX, namespace `spencrr` | trusted publishing (GitHub OIDC) | Eclipse account, sign the publisher agreement, `npx ovsx create-namespace spencrr -p <token>`, then **Settings → Trusted Publishers**: owner, repo, workflow `release.yml`. |
 | `PUBLISH_MCP` | MCP registry `io.github.spencrr/promptback` | GitHub OIDC (`io.github.spencrr/*`) | None; runs after npm because the registry fetches `promptback@<version>` from npm and checks its `mcpName`. |
 
-Every publish step is idempotent for a re-run (`--skip-duplicate`; npm and the MCP registry reject the duplicate, which the job reports). Before the first tag, turn on **Settings → General → Immutable releases**.
+Every publish step is idempotent for a re-run (`--skip-duplicate`; npm and the MCP registry reject the duplicate, which the step reports). Before the first tag: turn on **Settings → General → Immutable releases**, create the `release` environment with yourself as required reviewer and a `v*` tag deployment policy, and add a tag ruleset for `v*` that forbids updates and deletions.
+
+Workflow files are linted with [zizmor](https://docs.zizmor.sh) (`uvx zizmor .github/workflows`; CI uploads its findings to code scanning). Actions are pinned to commit SHAs with a version comment, checkouts don't persist credentials, and no job that produces an artifact uses a package cache.

@@ -1,84 +1,98 @@
 name: Release
 
-# Cut a release with `node scripts/release.mjs <version> --push` (see CONTRIBUTING.md → Releases). This workflow:
-#   1. verifies the tag points at main and matches every version field, and runs the full check
-#   2. builds every artifact once: the CLI tarball, one VSIX per platform, SHA256SUMS.txt
-#   3. publishes the GitHub Release (draft → assets → publish, so it is safe under immutable releases)
-#   4. publishes to each registry whose repository variable is "true" (Settings → Secrets and variables → Actions):
-#        PUBLISH_NPM          npm, trusted publishing (OIDC); provenance is automatic once the repository is public
-#        PUBLISH_MARKETPLACE  VS Code Marketplace, `vsce publish --oidc` (needs the Marketplace side to be enabled)
-#        PUBLISH_OPENVSX      Open VSX, trusted publishing (OIDC)
-#        PUBLISH_MCP          MCP registry, GitHub OIDC, after npm (the registry checks the npm package's mcpName)
-#      Unset variables skip the job, which is how publishing stays on hold. No registry needs a stored secret.
-# Tags with an odd minor (v0.7.x) are pre-releases: Marketplace/Open VSX pre-release channel and a GitHub prerelease.
+# Cut a release with `node scripts/release.mjs <version> --push` (see CONTRIBUTING.md → Releases). Four stages:
 #
-# `workflow_dispatch` runs everything up to the GitHub Release against any ref with publishing forced off (dry run).
+#   check    the tag is on main or a release/* branch and matches every version field.
+#   checks   lint, typecheck and the full test matrix, from test.yml: the same steps CI runs on every commit, run
+#            again here so the release is tested in its own right rather than trusting an earlier run.
+#   build    the third-party build tooling (npm, esbuild, vsce), with a read-only token and no package cache.
+#   publish  runs no third-party build code. It takes the artifacts from the build job, attests how they were built,
+#            creates the GitHub Release and publishes to each registry whose repository variable is "true":
+#              PUBLISH_NPM          npm, trusted publishing (OIDC); provenance is automatic for a public repository
+#              PUBLISH_MARKETPLACE  VS Code Marketplace, `vsce publish --oidc` (needs the Marketplace side enabled)
+#              PUBLISH_OPENVSX      Open VSX, trusted publishing (OIDC)
+#              PUBLISH_MCP          MCP registry, GitHub OIDC, after npm (the registry checks the npm package)
+#            Unset variables skip the step, which is how publishing stays on hold. No registry needs a stored secret.
+#            The job holds the only write token and the OIDC token, and it waits in the `release` environment for
+#            the maintainer's approval first: a leaked push credential can start a build, not a publish.
+#
+# Tags with an odd minor (v0.7.x) are pre-releases: Marketplace/Open VSX pre-release channel, npm `next`, GitHub
+# prerelease. Releases are immutable (a repository setting), so GitHub signs a release attestation as well:
+# `gh release verify-asset vX.Y.Z <file>`; the build provenance: `gh attestation verify <file> --owner spencrr`.
+#
+# There is deliberately no workflow_dispatch: CI's "Build artifacts" job produces the same artifacts on every push,
+# which is the dry run.
 on:
   push:
     tags: ["v*.*.*"]
-  workflow_dispatch:
 
-permissions:
-  contents: read
+# One run per tag, never cancelled part-way: a half-published release is worse than a late one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
 
 env:
   ONNXRUNTIME_NODE_INSTALL: skip
 
 jobs:
-  verify:
-    name: Verify the tag and run the checks
+  check:
+    name: Check the tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
     outputs:
       version: ${{ steps.meta.outputs.version }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
-      publish: ${{ steps.meta.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - name: Version, channel and whether this run may publish
+          persist-credentials: false
+      - name: The tag must be on main or a release branch, and match every version field
         id: meta
         run: |
-          version=$(node -p "require('./package.json').version")
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            tag="${GITHUB_REF_NAME#v}"
-            [ "$tag" = "$version" ] || { echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version"; exit 1; }
-            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::tag $GITHUB_REF_NAME does not point at a commit on main"; exit 1; }
-            publish=true
-          else
-            publish=false
-          fi
-          for f in packages/core/package.json packages/cli/package.json packages/vscode/package.json packages/cli/server.json; do
+          git fetch --no-tags --depth=200 origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/release/*:refs/remotes/origin/release/*'
+          on_branch=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin/main 'refs/remotes/origin/release/*' --contains "$GITHUB_SHA")
+          if [ -z "$on_branch" ]; then echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main or a release/* branch"; exit 1; fi
+          echo "On: $on_branch"
+          tag="${GITHUB_REF_NAME#v}"
+          for f in package.json packages/core/package.json packages/cli/package.json packages/vscode/package.json packages/cli/server.json; do
             v=$(node -p "require('./$f').version")
-            [ "$v" = "$version" ] || { echo "::error file=$f::version $v does not match $version"; exit 1; }
+            [ "$v" = "$tag" ] || { echo "::error file=$f::version $v does not match tag $tag"; exit 1; }
           done
-          minor=$(echo "$version" | cut -d. -f2)
+          minor=$(echo "$tag" | cut -d. -f2)
           prerelease=$([ $((minor % 2)) -eq 1 ] && echo true || echo false)
-          echo "version=$version"       >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
-          echo "publish=$publish"       >> "$GITHUB_OUTPUT"
-          echo "::notice::Promptback $version ($([ "$prerelease" = true ] && echo pre-release || echo release); publish=$publish)"
-      - run: npm run check
+          echo "version=$tag"             >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease"   >> "$GITHUB_OUTPUT"
+          echo "::notice::Promptback $tag ($([ "$prerelease" = true ] && echo pre-release || echo release))"
+
+  checks:
+    name: Checks
+    needs: check
+    uses: $/.github/workflows/test.yml
+    permissions:
+      contents: read
 
   build:
-    name: Build artifacts
+    name: Build the release
+    needs: [check, checks]
     runs-on: ubuntu-latest
-    needs: verify
+    permissions:
+      contents: read # checkout
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No npm cache here: a poisoned cache entry would end up inside the published artifacts.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-          cache: npm
+          package-manager-cache: false
       - run: npm ci --ignore-scripts
       - name: CLI tarball and one VSIX per platform
         env:
-          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          PRERELEASE: ${{ needs.check.outputs.prerelease }}
         run: |
           mkdir -p artifacts
           npm pack -w packages/cli --pack-destination artifacts
@@ -87,142 +101,97 @@ jobs:
             node packages/vscode/scripts/package.mjs --target "$target" $flag
           done
           mv packages/vscode/*.vsix artifacts/
-          (cd artifacts && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
-      - name: Release notes from the changelog
-        env:
-          VERSION: ${{ needs.verify.outputs.version }}
-        run: |
-          # The section for this version, without its heading.
-          awk -v v="$VERSION" '/^## \[/{p=index($0, "[" v "]")>0; if(p){next}} p && /^## /{exit} p' CHANGELOG.md > artifacts/NOTES.md
-          [ -s artifacts/NOTES.md ] || echo "See CHANGELOG.md." > artifacts/NOTES.md
-          printf '\n\nArtifacts: the `promptback` CLI (npm tarball) and one VSIX per platform; `SHA256SUMS.txt` lists their digests.\n' >> artifacts/NOTES.md
+          ls -l artifacts/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-${{ needs.verify.outputs.version }}
+          name: release-${{ github.sha }}
           path: artifacts/
           if-no-files-found: error
+          retention-days: 1
 
-  github-release:
-    name: GitHub Release
+  publish:
+    name: Publish
+    needs: [check, build]
     runs-on: ubuntu-latest
-    needs: [verify, build]
-    if: needs.verify.outputs.publish == 'true'
+    environment: release
     permissions:
-      contents: write
+      contents: write # create the release and upload its assets
+      id-token: write # Sigstore for the provenance attestation; trusted publishing on npm, Open VSX, the Marketplace, the MCP registry
+      attestations: write # store the provenance attestation on the repository
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      PRERELEASE: ${{ needs.check.outputs.prerelease }}
     steps:
+      # Only for CHANGELOG.md and packages/cli/server.json; nothing is built or installed in this job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: release-${{ needs.verify.outputs.version }}
-          path: artifacts
-      - name: Create as a draft, attach every asset, then publish
+          name: release-${{ github.sha }}
+          path: artifacts/
+      # Signed statement that each file came out of this workflow at this commit.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/*
+      - name: Release notes from the changelog
+        run: |
+          # The section for this version, without its heading, and without the link definitions at the end of the
+          # file (the oldest section runs into those). Trailing blank lines go too.
+          awk -v v="$VERSION" '/^## \[/{p=index($0, "[" v "]")>0; if(p){next}} p && (/^## / || /^\[[^]]+\]: /){exit} p' CHANGELOG.md \
+            | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md." > notes.md
+          cat >> notes.md <<EOF
+
+
+          **Install:** the CLI with \`npm install -g promptback@$VERSION\`; the extension from the VSIX for your platform
+          (**Help → About** in VS Code shows the architecture) via **Extensions → … → Install from VSIX**.
+          **Verify** a downloaded file is the one this release published and was built by this repository's workflow
+          (update \`gh\` if the commands are missing): \`gh release verify-asset $GITHUB_REF_NAME <file>\` and
+          \`gh attestation verify <file> --owner spencrr\`.
+          EOF
+      - name: Create the GitHub Release (draft, assets, publish)
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
         run: |
-          mv artifacts/NOTES.md notes.md
           gh release create "$GITHUB_REF_NAME" artifacts/* \
-            --title "Promptback ${GITHUB_REF_NAME#v}" \
+            --title "Promptback $VERSION" \
             --notes-file notes.md \
             --verify-tag \
             $([ "$PRERELEASE" = true ] && echo --prerelease)
 
-  publish-npm:
-    name: Publish to npm
-    runs-on: ubuntu-latest
-    needs: [verify, build, github-release]
-    if: needs.verify.outputs.publish == 'true' && vars.PUBLISH_NPM == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Node for the registry CLIs only; nothing is installed from the lockfile here, so no cache.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24 # trusted publishing needs npm >= 11.5.1
           registry-url: https://registry.npmjs.org
-      - run: npm ci --ignore-scripts
-      - name: npm publish (trusted publishing; the tag decides between latest and next)
-        env:
-          VERSION: ${{ needs.verify.outputs.version }}
-          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          package-manager-cache: false
+      - name: npm (trusted publishing; the tarball from the build job, no install)
+        if: vars.PUBLISH_NPM == 'true'
         run: |
           if curl -fsS "https://registry.npmjs.org/promptback/$VERSION" > /dev/null; then
-            echo "::notice::promptback@$VERSION is already on npm; nothing to publish"; exit 0
+            echo "::notice::promptback@$VERSION is already on npm"; exit 0
           fi
-          npm publish -w packages/cli --access public --tag "$([ "$PRERELEASE" = true ] && echo next || echo latest)"
-
-  publish-marketplace:
-    name: Publish to the VS Code Marketplace
-    runs-on: ubuntu-latest
-    needs: [verify, build, github-release]
-    if: needs.verify.outputs.publish == 'true' && vars.PUBLISH_MARKETPLACE == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-${{ needs.verify.outputs.version }}
-          path: artifacts
-      - name: vsce publish every VSIX (each carries its target platform)
-        env:
-          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          npm publish artifacts/promptback-"$VERSION".tgz --access public --tag "$([ "$PRERELEASE" = true ] && echo next || echo latest)"
+      - name: VS Code Marketplace (vsce --oidc; every VSIX carries its target platform)
+        if: vars.PUBLISH_MARKETPLACE == 'true'
         run: |
-          npx --no vsce publish --oidc --skip-duplicate --packagePath artifacts/*.vsix \
+          npx --yes @vscode/vsce@4.0.0 publish --oidc --skip-duplicate --packagePath artifacts/*.vsix \
             $([ "$PRERELEASE" = true ] && echo --pre-release)
-
-  publish-openvsx:
-    name: Publish to Open VSX
-    runs-on: ubuntu-latest
-    needs: [verify, build, github-release]
-    if: needs.verify.outputs.publish == 'true' && vars.PUBLISH_OPENVSX == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-${{ needs.verify.outputs.version }}
-          path: artifacts
-      - name: ovsx publish every VSIX (trusted publishing is picked up from the Actions OIDC token)
-        env:
-          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+      - name: Open VSX (trusted publishing is picked up from the Actions OIDC token)
+        if: vars.PUBLISH_OPENVSX == 'true'
         run: |
           npx --yes ovsx@1.3.0 publish --skip-duplicate --packagePath artifacts/*.vsix \
             $([ "$PRERELEASE" = true ] && echo --pre-release)
-
-  publish-mcp:
-    name: Publish to the MCP registry
-    runs-on: ubuntu-latest
-    needs: [verify, publish-npm]
-    if: needs.verify.outputs.publish == 'true' && vars.PUBLISH_MCP == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Wait until npm serves the version the registry will verify
-        env:
-          VERSION: ${{ needs.verify.outputs.version }}
-        run: |
-          for i in $(seq 1 30); do
-            if curl -fsS "https://registry.npmjs.org/promptback/$VERSION" > /dev/null; then exit 0; fi
-            sleep 10
-          done
-          echo "::error::promptback@$VERSION is not on npm yet"; exit 1
-      - name: mcp-publisher login (GitHub OIDC grants io.github.${{ github.repository_owner }}/*) and publish
+      - name: MCP registry (GitHub OIDC grants io.github.${{ github.repository_owner }}/*; after npm, which it verifies)
+        if: vars.PUBLISH_MCP == 'true'
         working-directory: packages/cli
         run: |
+          for i in $(seq 1 30); do
+            curl -fsS "https://registry.npmjs.org/promptback/$VERSION" > /dev/null && break
+            [ "$i" = 30 ] && { echo "::error::promptback@$VERSION is not on npm yet"; exit 1; }
+            sleep 10
+          done
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
           ./mcp-publisher login github-oidc
           if ./mcp-publisher publish 2>&1 | tee publish.log; then exit 0; fi

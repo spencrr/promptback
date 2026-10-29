@@ -55,8 +55,9 @@ if (git('tag', '--list', `v${next}`) !== '') {
 
 const preRelease = isPreRelease(next);
 console.log(`${current} → ${next} (${preRelease ? 'pre-release: odd minor' : 'release'}${dryRun ? ', dry run' : ''})`);
-if (git('rev-parse', '--abbrev-ref', 'HEAD') !== 'main') {
-	console.error('Release from main (release.yml publishes only tags that point at main).');
+const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
+if (branch !== 'main' && !branch.startsWith('release/')) {
+	console.error('Release from main or a release/* branch (release.yml publishes only tags on those).');
 	process.exit(1);
 }
 
@@ -111,12 +112,12 @@ git('add', '--', ...edits.keys(), 'package-lock.json');
 git('commit', '-m', `Release ${next}`);
 git('tag', '-a', `v${next}`, '-m', `Promptback ${next}`);
 if (push) {
-	execFileSync('git', ['push', 'origin', 'main', `v${next}`], { cwd: root, stdio: 'inherit' });
+	execFileSync('git', ['push', 'origin', branch, `v${next}`], { cwd: root, stdio: 'inherit' });
 	console.log(
 		`\nPushed v${next}; release.yml is running: https://github.com/spencrr/promptback/actions/workflows/release.yml`,
 	);
 } else {
-	console.log(`\nCommitted and tagged v${next}. Push with:\n  git push origin main v${next}`);
+	console.log(`\nCommitted and tagged v${next}. Push with:\n  git push origin ${branch} v${next}`);
 }
 
 /** Marketplace convention: odd minor = pre-release channel, even minor = release channel. */

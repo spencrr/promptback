@@ -14,6 +14,7 @@ All notable changes to Promptback are recorded here. The format follows [Keep a 
 - Results and status carry a `semantic` state (`ready`, `pending`, `off`, `failed` with the reason), and every surface shows the reason semantic search did not run: CLI stderr, the first line of MCP results, an Explorer banner, the Index panel, and a one-time VS Code warning with **Use hashed embeddings**.
 - CI runs the tests on Windows and Linux arm64 as well, including a real ONNX inference.
 - Release pipeline: one tag builds every artifact, publishes the GitHub Release and, per repository variable, npm, the VS Code Marketplace, Open VSX and the MCP registry, all with GitHub OIDC (no stored tokens). Odd minor versions are pre-releases. `scripts/release.mjs --push`; `package.mjs --pre-release`.
+- Release artifacts carry signed build provenance (`gh attestation verify <file> --owner spencrr`) and, with immutable releases, a release attestation (`gh release verify-asset`). The publish step runs no build tooling and waits for the maintainer's approval. Workflows are linted with zizmor in CI.
 
 ### Changed
 - Renamed from Yesterprompt to **Promptback**: `PROMPTBACK_HOME`, `~/.promptback`, `promptback.*` settings, extension id `spencrr.promptback-vscode`, CLI `promptback`.
