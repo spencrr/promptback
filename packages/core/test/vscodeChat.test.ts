@@ -41,10 +41,23 @@ describe('replayMutationLog (mirrors vscode ObjectMutationLog.read)', () => {
 
 	it('rejects logs without an initial entry and prototype-polluting paths', () => {
 		expect(() => replayMutationLog(lines({ kind: 1, k: ['a'], v: 1 }))).toThrow(/initial/u);
-		expect(() => replayMutationLog(lines({ kind: 0, v: {} }, { kind: 1, k: ['__proto__', 'x'], v: 1 }))).toThrow(
-			/Unsafe/u,
-		);
 		expect(() => replayMutationLog([])).toThrow(/Empty/u);
+		// Every key that reaches Object.prototype, as an intermediate segment and as the written key, on every
+		// mutation kind that writes.
+		for (const bad of ['__proto__', 'constructor', 'prototype']) {
+			for (const entry of [
+				{ kind: 1, k: [bad, 'x'], v: 1 },
+				{ kind: 1, k: ['a', bad], v: 1 },
+				{ kind: 2, k: [bad, 'x'], v: [1] },
+				{ kind: 2, k: ['a', bad], v: [1] },
+				{ kind: 3, k: [bad] },
+			]) {
+				expect(() => replayMutationLog(lines({ kind: 0, v: { a: {} } }, entry)), JSON.stringify(entry)).toThrow(
+					/Unsafe/u,
+				);
+			}
+		}
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
 	});
 });
 

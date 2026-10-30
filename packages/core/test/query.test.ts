@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { chunkText } from '../src/search/chunk.js';
-import { isAckText, parseDateRange, parseQuery } from '../src/search/query.js';
+import { isAckText, parseDateRange, parseQuery, splitQuery } from '../src/search/query.js';
+
+describe('splitQuery', () => {
+	it('keeps quoted segments whole, with or without a key or exclusion prefix', () => {
+		expect(splitQuery('a  "b c" repo:"d e" -"f g" -repo:"h i" j')).toEqual([
+			'a',
+			'"b c"',
+			'repo:"d e"',
+			'-"f g"',
+			'-repo:"h i"',
+			'j',
+		]);
+	});
+
+	it('runs an unterminated quote to the end and ignores quotes later in a token', () => {
+		expect(splitQuery('x "open to the end')).toEqual(['x', '"open to the end']);
+		expect(splitQuery('foo"bar baz" ""')).toEqual(['foo"bar', 'baz"', '""']);
+		expect(splitQuery('"a b"c')).toEqual(['"a b"', 'c']);
+		expect(splitQuery(' \t\n')).toEqual([]);
+	});
+
+	it('is linear in the input (queries come from users and from models)', () => {
+		// 1 MB of the shapes a backtracking tokenizer would choke on: letters without a colon, and key-like runs.
+		for (const text of ['A'.repeat(1_000_000), 'AAAA:'.repeat(200_000), '-'.repeat(1_000_000)]) {
+			const t0 = performance.now();
+			expect(splitQuery(text)).toHaveLength(1);
+			expect(performance.now() - t0).toBeLessThan(2000);
+		}
+	});
+});
 
 describe('chunkText', () => {
 	it('keeps short prompts whole and trims surrounding whitespace', () => {
