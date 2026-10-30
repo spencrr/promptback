@@ -20,7 +20,7 @@
   },
   "scripts": {
     "build": "npm run build -w packages/cli && npm run build -w packages/vscode",
-    "typecheck": "tsc -p packages/core && tsc -p packages/cli && tsc -p packages/vscode && tsc -p packages/vscode/webview",
+    "typecheck": "tsc -p packages/core && tsc -p packages/core/app && tsc -p packages/cli && tsc -p packages/vscode && tsc -p packages/vscode/webview",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",

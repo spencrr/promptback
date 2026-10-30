@@ -50,6 +50,8 @@ Free text plus `repo:` `branch:` `cwd:` `after:` `before:` `on:` `from:(me|agent
 
 Any MCP client works the same way (`command: promptback`, `args: ["mcp"]`). The server refreshes the index when a tool is called, loads the model only for queries that need it, and releases it after five idle minutes.
 
+Hosts that support [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) (VS Code, Claude Desktop, …) show `search_prompts` results as an interactive list: expand a hit, put it in the chat input, or open its session. Other hosts, and the model, see the same text as before. `promptback mcp --no-app` serves text only.
+
 ## Where it reads from
 
 | Source | Location (override) |

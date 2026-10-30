@@ -37,7 +37,11 @@ function writeSession(
 
 async function call(name: string, args: Record<string, unknown> = {}) {
 	const r = await client.callTool({ name, arguments: args });
-	return { text: (r.content as { text: string }[])[0]!.text, isError: Boolean(r.isError) };
+	return {
+		text: (r.content as { text: string }[])[0]!.text,
+		isError: Boolean(r.isError),
+		structuredContent: r.structuredContent,
+	};
 }
 
 beforeEach(async () => {
@@ -93,9 +97,10 @@ afterEach(async () => {
 });
 
 describe('MCP server', () => {
-	it('offers five read-only tools and usage instructions', async () => {
+	it('offers read-only tools and usage instructions', async () => {
 		const { tools } = await client.listTools();
 		expect(tools.map(t => t.name).sort()).toEqual([
+			'explore_prompts',
 			'get_prompt',
 			'get_session',
 			'index_status',
@@ -106,6 +111,44 @@ describe('MCP server', () => {
 			true,
 		);
 		expect(client.getInstructions()).toContain('search_prompts');
+	});
+
+	it('declares the results app on search_prompts and keeps its structured twin app-only', async () => {
+		const { tools } = await client.listTools();
+		const search = tools.find(t => t.name === 'search_prompts')!;
+		const explore = tools.find(t => t.name === 'explore_prompts')!;
+		// The app is attached to the tool the model calls; the text result is what it has always been.
+		expect(search._meta).toEqual({ ui: { resourceUri: 'ui://promptback/search.html' } });
+		const found = await call('search_prompts', { query: 'retry_policy' });
+		expect(found.structuredContent).toBeUndefined();
+		// Structured results come from the twin, which hosts honouring `visibility` hide from the model.
+		expect(explore._meta).toEqual({ ui: { visibility: ['app'] } });
+		const structured = await client.callTool({ name: 'explore_prompts', arguments: { query: 'retry_policy' } });
+		const data = structured.structuredContent as {
+			hits: { id: string; preview: string; session: { open: unknown[] } }[];
+		};
+		expect(data.hits).toHaveLength(1);
+		expect(data.hits[0]!.preview).toContain('retry_policy');
+		expect(data.hits[0]!.session.open.length).toBeGreaterThan(0);
+		// The app itself is a self-contained HTML resource of the MCP Apps profile.
+		const { resources } = await client.listResources();
+		expect(resources.map(r => r.uri)).toEqual(['ui://promptback/search.html']);
+		const html = await client.readResource({ uri: 'ui://promptback/search.html' });
+		const page = html.contents[0]!;
+		expect(page.mimeType).toBe('text/html;profile=mcp-app');
+		expect('text' in page && page.text).toMatch(/^<!doctype html>/iu);
+	});
+
+	it('can run without the app, exactly as before', async () => {
+		const [c, s] = InMemoryTransport.createLinkedPair();
+		await createMcpServer(engine, { version: 'test', app: false }).connect(s);
+		const plain = new Client({ name: 'plain', version: '0' });
+		await plain.connect(c);
+		const { tools } = await plain.listTools();
+		expect(tools.map(t => t.name)).not.toContain('explore_prompts');
+		expect(tools.find(t => t.name === 'search_prompts')!._meta).toBeUndefined();
+		expect(plain.getServerCapabilities()?.resources).toBeUndefined();
+		await plain.close();
 	});
 
 	it('finds a prompt, then follows its ids to the full prompt and the session', async () => {

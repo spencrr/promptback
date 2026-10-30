@@ -48,6 +48,7 @@ Options:
   --model <id>        Local embedding model (default bge-small-en-v1.5)
   --no-model          Lexical-only (no embeddings)
   --no-download       Never download a model
+  --no-app            mcp: serve text-only results (no interactive results app)
   --verbose, -v       Log progress to stderr
   --version           Print the version
   --help, -h          This help`;
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
 			model: { type: 'string' },
 			'no-model': { type: 'boolean' },
 			'no-download': { type: 'boolean' },
+			'no-app': { type: 'boolean' },
 			'no-embed': { type: 'boolean' },
 			verbose: { type: 'boolean', short: 'v' },
 			version: { type: 'boolean' },
@@ -92,6 +94,7 @@ async function main(): Promise<void> {
 		await serveMcp(
 			{ indexDir: values['index-dir'], embedding, allowModelDownload: !values['no-download'] },
 			VERSION,
+			{ app: !values['no-app'] },
 		);
 		return;
 	}

@@ -148,6 +148,12 @@ Each agent session starts its own server and keeps it for the session's lifetime
 
 Tool results reach the agent's model like any other context, so a past prompt can end up in a different project or model than the one it was written for.
 
+### Interactive results (MCP Apps)
+
+Hosts that support the [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview) (VS Code chat and the Agents window, Claude Desktop, …) render `search_prompts` results as a small app inline in the conversation instead of the plain text: the hit list with highlighted terms and session context, a refine box, **Use this prompt** (puts the prompt in the chat input without sending it) and **Open session** (the same deep links the CLI prints). Clicking a hit fetches the full text through `get_prompt`. Hosts without the extension ignore the app and show the text, which is also exactly what the model sees in both cases — the app changes nothing about what the agent reads.
+
+The app is a self-contained HTML page served as the `ui://promptback/search.html` resource (no network access; all data flows through the server's own tools). It fetches structured results from `explore_prompts`, a sixth tool marked app-only (`_meta.ui.visibility: ["app"]`), which hosts honouring that flag hide from the model. `promptback mcp --no-app` turns all of this off and serves the five tools as text only.
+
 ## Extending
 
 Every pluggable concept is a registry of plugins with a [zod](https://zod.dev) schema for its options, so configuration is validated with readable errors and nothing dispatches on names.
