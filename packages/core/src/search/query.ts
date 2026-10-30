@@ -63,12 +63,41 @@ interface OperatorContext {
 	readonly aliases: ReturnType<typeof sourceAliases>;
 }
 
-/** Tokenizes a query into whitespace-separated pieces, keeping quoted segments (with optional `key:` / `-` prefixes) intact. */
-function splitQuery(q: string): string[] {
+const WHITESPACE = /\s/u;
+const KEY_CHAR = /[a-zA-Z]/u;
+
+/**
+ * Tokenizes a query into whitespace-separated pieces, keeping quoted segments intact: a token that starts with an
+ * optional `-`, an optional `key:` and a `"` runs to the closing quote (or the end), whatever it contains. A quote
+ * later in a token has no effect. One pass, no backtracking: queries come from users and from models (MCP).
+ */
+export function splitQuery(q: string): string[] {
 	const out: string[] = [];
-	const re = /(-?(?:[a-zA-Z]+:)?"[^"]*"?)|(\S+)/gu;
-	for (let m = re.exec(q); m; m = re.exec(q)) {
-		out.push(m[0]);
+	let i = 0;
+	while (i < q.length) {
+		if (WHITESPACE.test(q[i]!)) {
+			i++;
+			continue;
+		}
+		const start = i;
+		let j = q[i] === '-' ? i + 1 : i;
+		let k = j;
+		while (k < q.length && KEY_CHAR.test(q[k]!)) {
+			k++;
+		}
+		if (k > j && q[k] === ':') {
+			j = k + 1;
+		}
+		if (q[j] === '"') {
+			const close = q.indexOf('"', j + 1);
+			i = close === -1 ? q.length : close + 1;
+		} else {
+			i = start;
+			while (i < q.length && !WHITESPACE.test(q[i]!)) {
+				i++;
+			}
+		}
+		out.push(q.slice(start, i));
 	}
 	return out;
 }

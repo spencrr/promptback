@@ -31,5 +31,6 @@ All notable changes to Promptback are recorded here. The format follows [Keep a 
 - A VSIX installed on VS Code of the other architecture (VS Code allows it) failed with a raw `Cannot find module '../bin/napi-v6/.../onnxruntime_binding.node'` after downloading the model, while the UI said "warming up". The runtime is now checked before any download, and the message names the architectures the build contains and the one to install; a missing Visual C++ runtime on Windows is diagnosed with the matching installer link.
 - Embeddings turned off (`none`) no longer show a permanent "warming up" banner in the Explorer.
 - A failed model load is no longer retried on every search; syncs still retry.
+- The query tokenizer is a single pass with no backtracking, and the VS Code chat-log replay refuses prototype-reaching keys at every path segment and write (the guard was there; it is now explicit at the write).
 
 [unreleased]: https://github.com/spencrr/promptback/compare/6564669...HEAD

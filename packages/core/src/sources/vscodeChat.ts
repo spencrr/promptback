@@ -83,7 +83,18 @@ type Entry =
 	| { kind: 2; k: ObjectPath; v?: unknown[]; i?: number }
 	| { kind: 3; k: ObjectPath };
 
-const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+/**
+ * The log's paths come from a file on disk and are applied with plain property writes, so a key that reaches
+ * `Object.prototype` (`__proto__`, or `constructor` → `prototype`) must never be followed or written. Intermediate
+ * segments go through this; the two write sites repeat the comparison inline, next to the assignment, so static
+ * analysis sees the guard where the write happens.
+ */
+function safeKey(key: string | number): string | number {
+	if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+		throw new Error('Unsafe path');
+	}
+	return key;
+}
 
 /**
  * Replays an `ObjectMutationLog` (vscode/src/vs/workbench/contrib/chat/common/model/objectMutationLog.ts, `read`,
@@ -126,11 +137,7 @@ export function replayMutationLog(lines: Iterable<string>): unknown {
 function walk(state: unknown, p: ObjectPath): Record<string | number, unknown> {
 	let current = state as Record<string | number, unknown>;
 	for (let i = 0; i < p.length - 1; i++) {
-		const key = p[i]!;
-		if (typeof key === 'string' && UNSAFE_KEYS.has(key)) {
-			throw new Error('Unsafe path');
-		}
-		current = current[key] as Record<string | number, unknown>;
+		current = current[safeKey(p[i]!)] as Record<string | number, unknown>;
 		if (current === null || typeof current !== 'object') {
 			throw new Error(`Invalid mutation path ${JSON.stringify(p)}`);
 		}
@@ -142,17 +149,18 @@ function applySet(state: unknown, p: ObjectPath, value: unknown): void {
 	if (p.length === 0) {
 		return;
 	}
+	const parent = walk(state, p);
 	const last = p.at(-1)!;
-	if (typeof last === 'string' && UNSAFE_KEYS.has(last)) {
+	if (last === '__proto__' || last === 'constructor' || last === 'prototype') {
 		throw new Error('Unsafe path');
 	}
-	walk(state, p)[last] = value;
+	parent[last] = value;
 }
 
 function applyPush(state: unknown, p: ObjectPath, values: unknown[] | undefined, startIndex: number | undefined): void {
 	const parent = walk(state, p);
 	const key = p.at(-1)!;
-	if (typeof key === 'string' && UNSAFE_KEYS.has(key)) {
+	if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
 		throw new Error('Unsafe path');
 	}
 	const arr = (parent[key] as unknown[]) || [];
