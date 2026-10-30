@@ -175,8 +175,9 @@ describe('promptback CLI (built binary)', () => {
 		const client = new Client({ name: 'e2e', version: '0' });
 		await client.connect(transport);
 		try {
-			const tools = (await client.listTools()).tools.map(t => t.name).sort((a, b) => a.localeCompare(b));
-			expect(tools).toEqual([
+			const { tools } = await client.listTools();
+			expect(tools.map(t => t.name).sort((a, b) => a.localeCompare(b))).toEqual([
+				'explore_prompts',
 				'get_prompt',
 				'get_session',
 				'index_status',
@@ -189,6 +190,35 @@ describe('promptback CLI (built binary)', () => {
 			expect(text).toMatch(/copilot:sess-1:a1/u);
 			const status = await client.callTool({ name: 'index_status', arguments: {} });
 			expect((status.content as { text: string }[])[0]!.text).toMatch(/Prompts: 3 in 2 sessions/u);
+
+			// The results app: only the built binary embeds the bundle, so this is where its presence is verified.
+			expect(tools.find(t => t.name === 'explore_prompts')!._meta).toEqual({ ui: { visibility: ['app'] } });
+			const app = await client.readResource({ uri: 'ui://promptback/search.html' });
+			const page = app.contents[0]!;
+			expect(page.mimeType).toBe('text/html;profile=mcp-app');
+			const html = 'text' in page ? page.text : '';
+			expect(html).toMatch(/<div id="root">/u);
+			expect(html).toMatch(/<script>[\s\S]{10000,}<\/script>/u);
+			expect(html).not.toContain('bundle not embedded');
+		} finally {
+			await client.close();
+		}
+	});
+
+	it('serves text-only tools with --no-app', async () => {
+		const transport = new StdioClientTransport({
+			command: process.execPath,
+			args: [cliJs, 'mcp', '--no-model', '--no-app'],
+			env: Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => typeof e[1] === 'string')),
+			stderr: 'pipe',
+		});
+		const client = new Client({ name: 'e2e', version: '0' });
+		await client.connect(transport);
+		try {
+			const { tools } = await client.listTools();
+			expect(tools.map(t => t.name)).not.toContain('explore_prompts');
+			expect(tools.find(t => t.name === 'search_prompts')!._meta).toBeUndefined();
+			expect(client.getServerCapabilities()?.resources).toBeUndefined();
 		} finally {
 			await client.close();
 		}

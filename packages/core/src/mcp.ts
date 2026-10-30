@@ -10,6 +10,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 import { type EngineOptions, PromptSearchEngine } from './engine.js';
 import { sessionOpenTargets } from './links.js';
+import { APP_MIME_TYPE, APP_RESOURCE_URI, appHtml, exploreForApp } from './mcpApp.js';
 import { clientLabel, promptSources } from './sources/registry.js';
 import type { IndexStatus, PromptOrigin, SearchHit, SemanticStatus, SessionInfo } from './types.js';
 import { collectGarbage } from './util/gc.js';
@@ -66,13 +67,16 @@ export interface McpServerOptions {
 	readonly version?: string;
 	/** Called before tools that read the index, to pick up new prompts. */
 	readonly refresh?: () => Promise<void>;
+	/** Serve the interactive results app with `search_prompts` (MCP Apps extension). Default on. */
+	readonly app?: boolean;
 }
 
 /** Builds the server and its tools; the caller connects a transport. */
 export function createMcpServer(engine: PromptSearchEngine, opts: McpServerOptions = {}): McpServer {
+	const app = opts.app !== false;
 	const server = new McpServer(
 		{ name: 'promptback', title: 'Promptback', version: opts.version ?? '0.0.0' },
-		{ instructions: instructions() },
+		{ instructions: instructions(), capabilities: app ? { resources: {} } : undefined },
 	);
 	const QueryHelp = queryHelp();
 	const refresh = opts.refresh ?? (() => Promise.resolve());
@@ -88,6 +92,9 @@ export function createMcpServer(engine: PromptSearchEngine, opts: McpServerOptio
 				limit: z.number().int().min(1).max(50).optional().describe('Maximum results (default 10).'),
 			},
 			annotations: READ_ONLY,
+			// Hosts with the MCP Apps extension render the results app inline; the text result below is unchanged.
+			// biome-ignore lint/style/useNamingConvention: `_meta` is the MCP protocol field.
+			...(app ? { _meta: { ui: { resourceUri: APP_RESOURCE_URI } } } : {}),
 		},
 		async ({ query, limit }) => {
 			await refresh();
@@ -106,6 +113,10 @@ export function createMcpServer(engine: PromptSearchEngine, opts: McpServerOptio
 			return textResult(lines.join('\n'));
 		},
 	);
+
+	if (app) {
+		registerApp(server, engine, refresh, QueryHelp);
+	}
 
 	server.registerTool(
 		'get_prompt',
@@ -263,10 +274,48 @@ export function createMcpServer(engine: PromptSearchEngine, opts: McpServerOptio
 	return server;
 }
 
+/**
+ * The results app: its HTML as a `ui://` resource, and the app-only tool it fetches structured results from. The
+ * model keeps calling `search_prompts`; this tool is hidden from it where hosts honour `_meta.ui.visibility`.
+ */
+function registerApp(
+	server: McpServer,
+	engine: PromptSearchEngine,
+	refresh: () => Promise<void>,
+	queryDescription: string,
+) {
+	server.registerResource(
+		'Promptback results app',
+		APP_RESOURCE_URI,
+		{ description: 'Interactive results list rendered by hosts that support MCP Apps.', mimeType: APP_MIME_TYPE },
+		() => ({ contents: [{ uri: APP_RESOURCE_URI, mimeType: APP_MIME_TYPE, text: appHtml() }] }),
+	);
+	server.registerTool(
+		'explore_prompts',
+		{
+			title: 'Search prompt history (structured, for the results app)',
+			description:
+				'Same search as search_prompts, returned as structured data for the interactive results app. Models should call search_prompts instead; its text result is made for reading.',
+			inputSchema: {
+				query: z.string().describe(queryDescription),
+				limit: z.number().int().min(1).max(50).optional().describe('Maximum results (default 10).'),
+			},
+			annotations: READ_ONLY,
+			// biome-ignore lint/style/useNamingConvention: `_meta` is the MCP protocol field.
+			_meta: { ui: { visibility: ['app'] } },
+		},
+		async ({ query, limit }) => {
+			await refresh();
+			return exploreForApp(engine, query, limit ?? 10);
+		},
+	);
+}
+
 /** Serves on stdin/stdout until the client disconnects. */
 export async function serveMcp(
 	opts: Omit<EngineOptions, 'log' | 'embeddingProvider'> = {},
 	version?: string,
+	serverOpts: Pick<McpServerOptions, 'app'> = {},
 ): Promise<void> {
 	// stdout carries the protocol, so stray console output must go to stderr.
 	console.log = console.error;
@@ -287,7 +336,7 @@ export async function serveMcp(
 			.catch(e => log(`Sync failed: ${e instanceof Error ? e.message : e}`));
 		await Promise.race([run, new Promise(r => setTimeout(r, REFRESH_WAIT_MS).unref())]);
 	};
-	const server = createMcpServer(engine, { version, refresh });
+	const server = createMcpServer(engine, { version, refresh, ...serverOpts });
 	const idle = setInterval(
 		() => void engine.releaseIfIdle(IDLE_RELEASE_MS).then(freed => freed && collectGarbage()),
 		60_000,

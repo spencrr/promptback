@@ -27,5 +27,8 @@
     "onnxruntime-node": "1.30.0",
     "yaml": "^2.8.0",
     "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "preact": "^11.1.0"
   }
 }

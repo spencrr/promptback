@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
+import { buildAppHtml } from '../../core/scripts/buildApp.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const production = process.argv.includes('--production');
@@ -32,7 +33,14 @@ const common = {
 const builds = [
 	{ ...common, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js' },
 	{ ...common, entryPoints: ['../core/src/host.ts'], outfile: 'dist/host.js' },
-	{ ...common, entryPoints: ['src/mcpMain.ts'], outfile: 'dist/mcp.js' },
+	{
+		...common,
+		entryPoints: ['src/mcpMain.ts'],
+		outfile: 'dist/mcp.js',
+		// The MCP App served with search_prompts, embedded as a string (see core/src/mcpApp.ts).
+		// biome-ignore lint/style/useNamingConvention: compile-time constant, named like one.
+		define: { __PROMPTBACK_MCP_APP_HTML__: JSON.stringify((await buildAppHtml({ minify: production })).html) },
+	},
 	{
 		...common,
 		platform: 'browser',

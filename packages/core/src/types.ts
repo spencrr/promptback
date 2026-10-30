@@ -285,3 +285,41 @@ export interface SessionOpenTarget {
 	/** Best-effort targets may fail (e.g. the Agents window only lists external CLI sessions modified in the last 7 days). */
 	readonly bestEffort?: boolean;
 }
+
+/**
+ * One hit as the MCP App renders it: a `SearchHit` without the full text (the app fetches that with `get_prompt` on
+ * demand), plus how to reopen the session. Shared by the server (`mcpApp.ts`) and the browser bundle (`app/`).
+ */
+export interface AppHit {
+	readonly id: string;
+	readonly sessionKey: string;
+	readonly timestamp: number;
+	readonly origin: string;
+	readonly model?: string;
+	/** First characters of the prompt. */
+	readonly preview: string;
+	readonly length: number;
+	readonly matchRange?: readonly [start: number, end: number];
+	readonly lexicalRank?: number;
+	readonly semanticRank?: number;
+	readonly duplicates: number;
+	readonly moreInSession: number;
+	readonly session: {
+		readonly title?: string;
+		readonly repository?: string;
+		readonly cwd?: string;
+		readonly branch?: string;
+		readonly client?: string;
+		readonly source: string;
+		readonly open: readonly SessionOpenTarget[];
+	};
+}
+
+/** The `structuredContent` of the app-only `explore_prompts` tool. */
+export interface AppSearchResult {
+	readonly query: string;
+	readonly freeText: string;
+	readonly semantic: SemanticStatus;
+	readonly tookMs: number;
+	readonly hits: readonly AppHit[];
+}
