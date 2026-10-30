@@ -84,7 +84,7 @@ export function repoInfo(s: SessionInfo | undefined): { label: string; kind: Rep
 		return { label: s.repository, kind: s.repositoryInferred ? 'inferred' : 'repo' };
 	}
 	if (s?.cwd && !s.workspaceless) {
-		return { label: s.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? NO_FOLDER, kind: 'folder' };
+		return { label: s.cwd.split(/[\\/]/u).filter(Boolean).at(-1) ?? NO_FOLDER, kind: 'folder' };
 	}
 	return { label: NO_FOLDER, kind: 'none' };
 }
@@ -338,10 +338,10 @@ const STOPWORDS = new Set(
 
 /** Lowercased words to highlight (query words and quoted phrases; operators and stopwords dropped). */
 export function highlightTerms(freeText: string): string[] {
-	const quoted = [...freeText.matchAll(/"([^"]+)"/g)].map(m => m[1]!.toLowerCase());
+	const quoted = [...freeText.matchAll(/"([^"]+)"/gu)].map(m => m[1]!.toLowerCase());
 	const words = (
 		freeText
-			.replace(/"[^"]*"/g, ' ')
+			.replace(/"[^"]*"/gu, ' ')
 			.toLowerCase()
 			.match(/[\p{L}\p{N}_]{3,}/gu) ?? []
 	).filter(w => !STOPWORDS.has(w));
@@ -354,7 +354,7 @@ export function segments(text: string, terms: readonly string[]): { text: string
 		return [{ text, hit: false }];
 	}
 	const re = new RegExp(
-		`(?<![\\p{L}\\p{N}_])(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+		`(?<![\\p{L}\\p{N}_])(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')).join('|')})`,
 		'giu',
 	);
 	const out: { text: string; hit: boolean }[] = [];
@@ -453,7 +453,7 @@ export function buildGraph(vm: ViewModel, result: ExploreResult, limit: number, 
 		const [slice] = effective[i]!;
 		return {
 			id: r.id,
-			label: r.preview.trim().split(/\r?\n/, 1)[0] ?? '',
+			label: r.preview.trim().split(/\r?\n/u, 1)[0] ?? '',
 			group: slice,
 			color: slice === 'other' ? OTHER_COLOR : colorFor(slice),
 			sessionKey: r.sessionKey,

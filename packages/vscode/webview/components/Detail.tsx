@@ -122,7 +122,7 @@ export function Detail({
 							>
 								<button type="button" onClick={() => select(p.id)} title={p.text}>
 									<span class="seq">{p.seq + 1}</span>
-									<span class="txt">{p.text.trim().split(/\r?\n/, 1)[0]}</span>
+									<span class="txt">{p.text.trim().split(/\r?\n/u, 1)[0]}</span>
 									<span class="muted when">{relativeTime(p.timestamp)}</span>
 								</button>
 							</li>

@@ -55,10 +55,10 @@ export function claudeSessionKey(sessionId: string): string {
 
 /** Messages Claude Code injects as the user: slash commands, hook and IDE output, background-task notifications. */
 /** The summary Claude Code inserts as a user message when a compacted session continues. */
-const CONTINUATION = /^This session is being continued from a previous conversation/;
+const CONTINUATION = /^This session is being continued from a previous conversation/u;
 
 const INJECTED_TAG =
-	/^(task-notification|system-reminder|local-command-.*|command-.*|bash-.*|ide|ide_.*|user-prompt-submit-hook.*)$/;
+	/^(task-notification|system-reminder|local-command-.*|command-.*|bash-.*|ide|ide_.*|user-prompt-submit-hook.*)$/u;
 
 interface ClaudeUserLine {
 	readonly uuid?: unknown;
@@ -160,7 +160,7 @@ export function readClaudeSession(
 		{
 			// Lines whose type is visible early and not needed are skipped before parsing; unknown heads are parsed.
 			wantLine: head => {
-				const m = /"type":"([a-z-]+)"/.exec(head);
+				const m = /"type":"([a-z-]+)"/u.exec(head);
 				return !m || m[1] === 'user' || m[1] === 'assistant' || m[1] === 'ai-title' || m[1] === 'summary';
 			},
 		},

@@ -8,11 +8,11 @@ export const modelFileSchema = z.object({
 	path: z
 		.string()
 		.min(1)
-		.regex(/^[^\\]+$/, 'use forward slashes'),
+		.regex(/^[^\\]+$/u, 'use forward slashes'),
 	size: z.number().int().positive(),
 	sha256: z
 		.string()
-		.regex(/^[0-9a-f]{64}$/)
+		.regex(/^[0-9a-f]{64}$/u)
 		.optional(),
 });
 
@@ -21,7 +21,7 @@ export const modelFileSchema = z.object({
  * their own model in `<modelDir>/model.json` with the same shape (see {@link loadModelManifest}).
  */
 export const localModelSpecSchema = z.object({
-	id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'letters, digits, . _ -'),
+	id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u, 'letters, digits, . _ -'),
 	displayName: z.string().min(1),
 	/** Hugging Face repository (`owner/name`); empty for models that are never downloaded. */
 	repo: z.string().default(''),
@@ -164,5 +164,5 @@ export function modelFileUrl(spec: LocalModelSpec, file: ModelFile, mirror = 'ht
 	if (!spec.repo || !spec.revision) {
 		throw new Error(`Model '${spec.id}' has no download location`);
 	}
-	return `${mirror.replace(/\/$/, '')}/${spec.repo}/resolve/${spec.revision}/${file.path}`;
+	return `${mirror.replace(/\/$/u, '')}/${spec.repo}/resolve/${spec.revision}/${file.path}`;
 }

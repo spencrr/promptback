@@ -205,7 +205,7 @@ function toItems(res: SearchResult): HitItem[] {
 	return res.hits.map(hit => {
 		const s = hit.session;
 		const text = hit.prompt.text.trim();
-		const firstLine = oneLine(text.split(/\r?\n/, 1)[0] ?? '', 140);
+		const firstLine = oneLine(text.split(/\r?\n/u, 1)[0] ?? '', 140);
 		const where = [
 			s.title && s.title !== firstLine ? oneLine(s.title, 50) : undefined,
 			shortRepo(s.repository ?? s.cwd),
@@ -236,7 +236,7 @@ function iconFor(client: string | undefined): string {
 }
 
 function oneLine(s: string, max: number): string {
-	const t = s.replace(/\s+/g, ' ').trim().replace(/\$\(/g, '$\u200b(');
+	const t = s.replace(/\s+/gu, ' ').trim().replace(/\$\(/gu, '$\u200b(');
 	return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
@@ -256,7 +256,7 @@ function shortRepo(r: string | undefined): string | undefined {
 	if (!r) {
 		return undefined;
 	}
-	const parts = r.split(/[\\/]/).filter(Boolean);
+	const parts = r.split(/[\\/]/u).filter(Boolean);
 	return parts.length > 2 ? parts.slice(-2).join('/') : r;
 }
 

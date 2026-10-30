@@ -325,6 +325,8 @@ button.toggle.on {
 	flex-direction: column;
 	min-height: 0;
 	min-width: 0;
+	/* the index drawer is positioned against it */
+	position: relative;
 }
 .banner {
 	padding: 6px 12px;
@@ -677,9 +679,6 @@ h3 .codicon,
 }
 
 /* ---- index drawer ----------------------------------------------------------------------------------------------- */
-.center {
-	position: relative;
-}
 .drawer {
 	position: absolute;
 	top: 0;

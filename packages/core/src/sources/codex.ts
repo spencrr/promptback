@@ -35,7 +35,7 @@ export interface CodexSessionFile {
 	readonly path: string;
 }
 
-const ROLLOUT = /^rollout-.*-([0-9a-f-]{36})\.jsonl$/;
+const ROLLOUT = /^rollout-.*-([0-9a-f-]{36})\.jsonl$/u;
 
 /** `<home>/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` and the same under `archived_sessions`. */
 export function listCodexSessionFiles(home: string): CodexSessionFile[] {
@@ -46,7 +46,7 @@ export function listCodexSessionFiles(home: string): CodexSessionFile[] {
 			const m = ROLLOUT.exec(name);
 			if (m) {
 				out.push({ sessionId: m[1]!, path: p });
-			} else if (depth < 4 && /^\d+$/.test(name)) {
+			} else if (depth < 4 && /^\d+$/u.test(name)) {
 				walk(p, depth + 1);
 			}
 		}
@@ -62,7 +62,7 @@ export function codexSessionKey(sessionId: string): string {
 
 /** Context Codex injects as user messages: environment, instructions, sub-agent and abort notifications. */
 const INJECTED_TAG =
-	/^(environment_context|user_instructions|permissions.*|subagent_notification|turn_aborted|side-chat-context|AGENTS\.md.*)$/;
+	/^(environment_context|user_instructions|permissions.*|subagent_notification|turn_aborted|side-chat-context|AGENTS\.md.*)$/u;
 
 export function classifyCodexOrigin(text: string, subagentThread: boolean): PromptOrigin {
 	if (subagentThread) {
@@ -159,7 +159,7 @@ export function readCodexSession(file: CodexSessionFile, size: number): SessionF
 		},
 		{
 			wantLine: head => {
-				const m = /"type":"([a-z_]+)"/.exec(head);
+				const m = /"type":"([a-z_]+)"/u.exec(head);
 				return (
 					!m ||
 					m[1] === 'session_meta' ||

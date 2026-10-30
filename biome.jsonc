@@ -8,7 +8,10 @@
     "defaultBranch": "main"
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/package-lock.json", "!packages/vscode/models"]
+    // Markdown and YAML are excluded on purpose: Biome 2.6 would pad every Markdown table separator to column
+    // width and re-indent YAML to the global 4 spaces (GitHub workflows, Dependabot and lefthook all use 2).
+    // .editorconfig governs those files.
+    "includes": ["**", "!**/dist", "!**/package-lock.json", "!packages/vscode/models", "!**/*.md", "!**/*.yml"]
   },
   "formatter": {
     "enabled": true,
@@ -91,7 +94,10 @@
         // dependencies (stale closures) are the bugs worth reporting.
         "useExhaustiveDependencies": { "level": "on", "options": { "reportUnnecessaryDependencies": false } },
         // NodeNext: `.ts` sources are imported with the `.js` suffix they compile to.
-        "useImportExtensions": { "level": "on", "options": { "extensionMappings": { "ts": "js", "tsx": "js" } } }
+        "useImportExtensions": { "level": "on", "options": { "extensionMappings": { "ts": "js", "tsx": "js" } } },
+        // Biome 2.6 reports `"top top top" / "rail center detail"` (a valid 3-column grid) as an inconsistent cell
+        // count; 2.5 had the same bug on the single-line form. The browser is the check for these three grids.
+        "noInvalidGridAreas": "off"
       },
       "performance": {
         "preset": "all",
@@ -121,7 +127,15 @@
         // Preact accepts HTML attribute names (`class`, `autofocus`, `onDblClick`); this rule knows React's.
         "noUnknownAttribute": "off",
         // Without type information it misjudges nullable values; every finding here was a false positive.
-        "noUnnecessaryConditions": "off"
+        "noUnnecessaryConditions": "off",
+        // The webview runs in VS Code's Electron, not the open web: `user-select`, `accent-color`,
+        // `display: contents` and `clip` are all supported there, whatever Baseline says.
+        "useBaseline": "off",
+        // Closures inside loops capture per-iteration `const`s (sort comparators, per-file callbacks); the
+        // `var`-era hazard this guards against does not exist in this code base.
+        "noLoopFunc": "off",
+        // `if (field !== undefined) expect(field)…` is how an optional field is asserted; the guard is the point.
+        "noConditionalExpect": "off"
       },
       "style": {
         "preset": "all",
@@ -141,6 +155,14 @@
         "useExportsLast": "off",
         // TypeScript's exhaustiveness check over discriminated unions replaces `default` clauses.
         "useDefaultSwitchClause": "off",
+        // Methods that implement an interface (`EmbeddingProvider.dispose`, VS Code's `CustomEditorProvider`,
+        // `TreeDataProvider`) cannot become static just because one implementation happens not to use `this`.
+        "useThisInClassMethods": "off",
+        // Two-group patterns such as `/^(\d+)([dwmy])$/` read better positionally; name groups where it helps.
+        "useNamedCaptureGroup": "off",
+        // Every inline style in the webview is a computed value (virtualized row offsets, data-driven widths and
+        // colours); that is what the attribute is for. Static styling lives in styles.css.
+        "noInlineStyles": "off",
         // `noUncheckedIndexedAccess` is on; `!` marks the places where the index is proven in range (hot loops).
         "noNonNullAssertion": "off",
         // The webview stylesheet is ordered by component, not by specificity.

@@ -64,7 +64,7 @@ describe('model store', () => {
 		expect(modelFileUrl(spec, spec.files[0]!, 'https://mirror.example/hf/')).toBe(
 			'https://mirror.example/hf/test/tiny/resolve/abc123def456/onnx/model.onnx',
 		);
-		expect(() => modelFileUrl({ ...spec, repo: '' }, spec.files[0]!)).toThrow(/no download location/);
+		expect(() => modelFileUrl({ ...spec, repo: '' }, spec.files[0]!)).toThrow(/no download location/u);
 	});
 
 	it('downloads into the cache, verifies hashes and marks the folder verified', async () => {
@@ -80,7 +80,7 @@ describe('model store', () => {
 		expect(requests).toHaveLength(2);
 		expect(fs.readFileSync(path.join(dir, 'tokenizer.json'), 'utf8')).toBe('{"version":"1.0"}');
 		expect(fs.readFileSync(path.join(dir, '.verified'), 'utf8')).toBe(spec.revision);
-		expect(progress.join('\n')).toMatch(/Downloading test\/tiny\/onnx\/model.onnx/);
+		expect(progress.join('\n')).toMatch(/Downloading test\/tiny\/onnx\/model.onnx/u);
 		// Second resolution is served from the cache without any request.
 		const again = fakeFetch();
 		expect(await resolveModelDir(spec, { cacheDir: tmp, allowDownload: true, fetch: again.fetch })).toBe(dir);
@@ -90,7 +90,7 @@ describe('model store', () => {
 	it('rejects a download whose bytes do not match the pinned hash and leaves no partial folder', async () => {
 		const { fetch: f } = fakeFetch({ tamper: 'onnx/model.onnx' });
 		await expect(resolveModelDir(spec, { cacheDir: tmp, allowDownload: true, fetch: f })).rejects.toThrow(
-			/Integrity check failed for onnx\/model.onnx/,
+			/Integrity check failed for onnx\/model.onnx/u,
 		);
 		expect(fs.existsSync(path.join(tmp, spec.id))).toBe(false);
 		expect(fs.readdirSync(tmp)).toEqual([]);
@@ -99,10 +99,10 @@ describe('model store', () => {
 	it('reports HTTP failures and refuses to download when downloads are off', async () => {
 		await expect(
 			resolveModelDir(spec, { cacheDir: tmp, allowDownload: true, fetch: fakeFetch({ status: 503 }).fetch }),
-		).rejects.toThrow(/failed: 503/);
+		).rejects.toThrow(/failed: 503/u);
 		await expect(
 			resolveModelDir(spec, { cacheDir: tmp, allowDownload: false, fetch: fakeFetch().fetch }),
-		).rejects.toThrow(/downloads are disabled/);
+		).rejects.toThrow(/downloads are disabled/u);
 	});
 
 	it('prefers an explicit model directory and read-only search directories over the cache', async () => {
@@ -117,7 +117,7 @@ describe('model store', () => {
 		).toBe(explicit);
 		await expect(
 			resolveModelDir(spec, { modelDir: path.join(tmp, 'missing'), cacheDir: tmp, allowDownload: false }),
-		).rejects.toThrow(/does not contain the expected files/);
+		).rejects.toThrow(/does not contain the expected files/u);
 
 		const bundled = path.join(tmp, 'bundled');
 		fs.cpSync(explicit, path.join(bundled, spec.id), { recursive: true });
@@ -134,7 +134,7 @@ describe('model store', () => {
 	it('refuses to download a manifest model without pinned hashes', async () => {
 		const unpinned = { ...spec, files: spec.files.map(f => ({ path: f.path, size: f.size })) };
 		await expect(downloadModel(unpinned, path.join(tmp, 'x'), { fetch: fakeFetch().fetch })).rejects.toThrow(
-			/pins no sha256/,
+			/pins no sha256/u,
 		);
 	});
 });

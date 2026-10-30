@@ -186,7 +186,7 @@ function App() {
 				return;
 			}
 			const i = vm.rows.findIndex(r => r.id === selectedId);
-			setSelectedId(vm.rows[Math.max(0, Math.min(vm.rows.length - 1, (i < 0 ? 0 : i) + delta))]!.id);
+			setSelectedId(vm.rows[Math.max(0, Math.min(vm.rows.length - 1, Math.max(0, i) + delta))]!.id);
 		},
 		[vm, selectedId],
 	);
@@ -478,4 +478,4 @@ function useKeyboard(o: {
 	}, [o.move, o.act, o.query, o.setQuery, o.toggleGraph, o.inputRef]);
 }
 
-render(<App />, document.getElementById('root')!);
+render(<App />, document.querySelector('#root')!);

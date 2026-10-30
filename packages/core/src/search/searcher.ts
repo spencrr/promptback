@@ -381,6 +381,6 @@ function excerpt(text: string, [start, end]: readonly [number, number]): string 
 	const from = Math.max(0, start - 80);
 	return `${from > 0 ? '…' : ''}${text
 		.slice(from, Math.max(end, from + 240))
-		.replace(/\s+/g, ' ')
+		.replace(/\s+/gu, ' ')
 		.trim()}…`;
 }

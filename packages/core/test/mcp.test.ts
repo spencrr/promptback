@@ -114,15 +114,15 @@ describe('MCP server', () => {
 		expect(found.text).toContain('owner/webapp · main · Copilot CLI');
 		// Embeddings are off in this index; the model reading the result is told so, not left guessing.
 		expect(found.text).toMatch(
-			/^1 prompt for "retry_policy", best first \(keyword matches only; semantic search is turned off\):/,
+			/^1 prompt for "retry_policy", best first \(keyword matches only; semantic search is turned off\):/u,
 		);
 
-		const prompt = await call('get_prompt', { id: /prompt: (\S+)/.exec(found.text)![1]! });
+		const prompt = await call('get_prompt', { id: /prompt: (\S+)/u.exec(found.text)![1]! });
 		expect(prompt.text).toContain('by the user');
 		expect(prompt.text).toContain('copilot --resume sess-alpha');
 		expect(prompt.text.endsWith('Fix the flaky retry_policy test in the HTTP client')).toBe(true);
 
-		const session = await call('get_session', { session_id: /session: (\S+)/.exec(found.text)![1]! });
+		const session = await call('get_session', { session_id: /session: (\S+)/u.exec(found.text)![1]! });
 		expect(session.text).toContain('2 prompts from');
 		expect(session.text).not.toContain('kusto');
 		expect(session.text).toContain('truncated, full text: get_prompt copilot:sess-alpha:a3');

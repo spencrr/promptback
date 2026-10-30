@@ -222,7 +222,7 @@ function Row(p: TableProps & { row: ExploreRow; top: number; template: string; m
 	const selected = row.id === p.selectedId;
 	const dups = p.vm.dupCounts.get(row.hash) ?? 1;
 	const topic = result.topics.find(t => t.id === row.topic);
-	const firstLine = row.preview.trim().split(/\r?\n/, 1)[0] ?? '';
+	const firstLine = row.preview.trim().split(/\r?\n/u, 1)[0] ?? '';
 	const classes = [
 		'tr',
 		selected && 'selected',

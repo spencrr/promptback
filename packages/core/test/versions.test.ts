@@ -24,7 +24,7 @@ describe('release metadata', () => {
 			versions.add(p.version);
 		}
 		expect([...versions]).toHaveLength(1);
-		expect([...versions][0]).toMatch(/^\d+\.\d+\.\d+$/);
+		expect([...versions][0]).toMatch(/^\d+\.\d+\.\d+$/u);
 	});
 
 	it('names the MCP server consistently in server.json and the npm package', () => {
@@ -52,13 +52,13 @@ describe('install metadata', () => {
 	it('keeps the committed .npmrc free of registries and credentials, and omits lockfile registry URLs', () => {
 		const lines = fs
 			.readFileSync(path.join(root, '.npmrc'), 'utf8')
-			.split(/\r?\n/)
+			.split(/\r?\n/u)
 			.map(l => l.trim())
 			.filter(l => l && !l.startsWith(';') && !l.startsWith('#'));
 		expect(lines).toContain('omit-lockfile-registry-resolved=true');
 		for (const line of lines) {
 			const key = line.split('=')[0]!.trim();
-			expect(line, 'scoped registry or auth line').not.toMatch(/^(\/\/|@)/);
+			expect(line, 'scoped registry or auth line').not.toMatch(/^(\/\/|@)/u);
 			expect(
 				['registry', 'always-auth', '_auth', '_authToken', 'username', '_password', 'email'],
 				line,
@@ -78,7 +78,7 @@ describe('install metadata', () => {
 			expect(p.integrity, `${name} has an integrity hash`).toBeDefined();
 			if (p.resolved !== undefined) {
 				expect(p.resolved, `${name} resolves from a private feed; run npm install --package-lock-only`).toMatch(
-					/^https:\/\/registry\.npmjs\.org\//,
+					/^https:\/\/registry\.npmjs\.org\//u,
 				);
 			}
 		}

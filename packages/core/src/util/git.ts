@@ -49,7 +49,7 @@ function readOriginUrl(root: string): string | undefined {
 		let gitDir = path.join(root, '.git');
 		if (fs.statSync(gitDir).isFile()) {
 			// Worktree: ".git" contains "gitdir: <path>"; the shared config lives in the common dir.
-			const target = /gitdir:\s*(.+)/.exec(fs.readFileSync(gitDir, 'utf8'))?.[1]?.trim();
+			const target = /gitdir:\s*(.+)/u.exec(fs.readFileSync(gitDir, 'utf8'))?.[1]?.trim();
 			if (!target) {
 				return undefined;
 			}
@@ -60,8 +60,8 @@ function readOriginUrl(root: string): string | undefined {
 			}
 		}
 		const config = fs.readFileSync(path.join(gitDir, 'config'), 'utf8');
-		const section = /\[remote "origin"\]([^[]*)/.exec(config)?.[1];
-		return section ? /^\s*url\s*=\s*(.+)$/m.exec(section)?.[1]?.trim() : undefined;
+		const section = /\[remote "origin"\]([^[]*)/u.exec(config)?.[1];
+		return section ? /^\s*url\s*=\s*(.+)$/mu.exec(section)?.[1]?.trim() : undefined;
 	} catch {
 		return undefined;
 	}
@@ -72,11 +72,11 @@ export function parseRemote(url: string | undefined): string | undefined {
 	if (!url) {
 		return undefined;
 	}
-	const ado = /\/([^/]+)\/_git\/([^/?#]+)/.exec(url);
+	const ado = /\/([^/]+)\/_git\/([^/?#]+)/u.exec(url);
 	if (ado) {
 		return `${decodeURIComponent(ado[1]!)}/${decodeURIComponent(ado[2]!)}`;
 	}
-	const m = /[/:]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/.exec(url);
+	const m = /[/:]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/u.exec(url);
 	return m ? `${m[1]}/${m[2]}` : undefined;
 }
 
@@ -85,14 +85,14 @@ export function parseRemote(url: string | undefined): string | undefined {
  * POSIX `/...` when the slash starts a token (so `https://host/x` and `a/b` are not paths).
  */
 const PATH_RE =
-	/(?:~|\$HOME|\$env:USERPROFILE|%USERPROFILE%|[a-zA-Z]:)[\\/][^\s"'`;|<>*?]+|(?<![\w:./\\-])\/[^\s"'`;|<>*?:]+/gi;
+	/(?:~|\$HOME|\$env:USERPROFILE|%USERPROFILE%|[a-zA-Z]:)[\\/][^\s"'`;|<>*?]+|(?<![\w:./\\-])\/[^\s"'`;|<>*?:]+/giu;
 
 /** Git roots referenced by absolute (or home-relative) paths in a tool-call argument string. */
 export function gitRootsInText(text: string, home: string, ignore: (p: string) => boolean): string[] {
 	const out: string[] = [];
 	for (const m of text.matchAll(PATH_RE)) {
-		let p = m[0].replace(/[.,)\]}:]+$/, '');
-		p = p.replace(/^(?:~|\$HOME|\$env:USERPROFILE|%USERPROFILE%)/i, home);
+		let p = m[0].replace(/[.,)\]}:]+$/u, '');
+		p = p.replace(/^(?:~|\$HOME|\$env:USERPROFILE|%USERPROFILE%)/iu, home);
 		p = path.normalize(p);
 		if (ignore(p)) {
 			continue;

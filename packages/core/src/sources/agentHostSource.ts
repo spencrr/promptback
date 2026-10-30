@@ -51,7 +51,7 @@ export const agentHostSource: PromptSourcePlugin<AgentHostSourceOptions> = {
 						st = { mtimeMs: m, size: 0, ...readAgentHostDb(dbPath) };
 					} catch (e) {
 						st = { mtimeMs: m, size: 0, links: [] };
-						if (!/no such table/i.test(errorMessage(e))) {
+						if (!/no such table/iu.test(errorMessage(e))) {
 							errors.push(`${dbPath}: ${errorMessage(e)}`);
 						}
 					}

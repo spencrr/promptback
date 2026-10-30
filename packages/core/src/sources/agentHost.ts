@@ -86,6 +86,6 @@ function sdkId(providerData: string | undefined): string | undefined {
 }
 
 function chatIdFromUri(uri: string): string | undefined {
-	const m = /^ahp-chat:\/\/([^/]+)/.exec(uri);
+	const m = /^ahp-chat:\/\/([^/]+)/u.exec(uri);
 	return m?.[1] && m[1] !== 'default' ? decodeURIComponent(m[1]) : undefined;
 }

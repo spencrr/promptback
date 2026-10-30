@@ -49,7 +49,7 @@ export function chunkText(text: string, opts: ChunkOptions = DEFAULT_CHUNK_OPTIO
 	return chunks;
 }
 
-const BREAKS: RegExp[] = [/\n\s*\n/g, /\n/g, /[.!?]\s/g, /\s/g];
+const BREAKS: RegExp[] = [/\n\s*\n/gu, /\n/gu, /[.!?]\s/gu, /\s/gu];
 
 function findBreak(text: string, min: number, max: number): number {
 	const window = text.slice(min, max);

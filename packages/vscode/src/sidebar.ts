@@ -191,18 +191,18 @@ function groupByRecency(sessions: readonly RecentSession[], now = Date.now()): [
 }
 
 function firstLine(text: string): string {
-	const line = text.trim().split(/\r?\n/, 1)[0] ?? '';
+	const line = text.trim().split(/\r?\n/u, 1)[0] ?? '';
 	return line.length > 90 ? `${line.slice(0, 89)}…` : line;
 }
 
 /** Session titles are often the first prompt verbatim: keep its first meaningful line, without markdown markers. */
 function cleanTitle(title: string | undefined): string | undefined {
 	const line = title
-		?.split(/\r?\n|⏎/)
+		?.split(/\r?\n|⏎/u)
 		.map(l =>
 			l
-				.replace(/^[#>*\-\s`]+/, '')
-				.replace(/\*\*/g, '')
+				.replace(/^[#>*\-\s`]+/u, '')
+				.replace(/\*\*/gu, '')
 				.trim(),
 		)
 		.find(l => l.length > 0);
@@ -210,11 +210,11 @@ function cleanTitle(title: string | undefined): string | undefined {
 }
 
 function folderName(cwd: string | undefined): string | undefined {
-	return cwd?.split(/[\\/]/).filter(Boolean).at(-1);
+	return cwd?.split(/[\\/]/u).filter(Boolean).at(-1);
 }
 
 function escapeMarkdown(s: string): string {
-	return s.replace(/[\\`*_{}[\]()#+\-.!|<>]/g, '\\$&');
+	return s.replace(/[\\`*_{}[\]()#+\-.!|<>]/gu, '\\$&');
 }
 
 function relative(ts: number): string {

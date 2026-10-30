@@ -66,7 +66,7 @@ interface OperatorContext {
 /** Tokenizes a query into whitespace-separated pieces, keeping quoted segments (with optional `key:` / `-` prefixes) intact. */
 function splitQuery(q: string): string[] {
 	const out: string[] = [];
-	const re = /(-?(?:[a-zA-Z]+:)?"[^"]*"?)|(\S+)/g;
+	const re = /(-?(?:[a-zA-Z]+:)?"[^"]*"?)|(\S+)/gu;
 	for (let m = re.exec(q); m; m = re.exec(q)) {
 		out.push(m[0]);
 	}
@@ -104,7 +104,7 @@ export function parseQuery(raw: string, now = Date.now()): ParsedQuery {
 	for (const tok of splitQuery(raw)) {
 		const neg = tok.startsWith('-') && tok.length > 1;
 		const body = neg ? tok.slice(1) : tok;
-		const op = /^([a-zA-Z]+):(.*)$/s.exec(body);
+		const op = /^([a-zA-Z]+):(.*)$/su.exec(body);
 		if (op && KEYS.has(op[1]!.toLowerCase()) && op[2]) {
 			const key = op[1]!.toLowerCase();
 			const value = unquote(op[2]);
@@ -144,7 +144,7 @@ export function parseQuery(raw: string, now = Date.now()): ParsedQuery {
 }
 
 function unquote(v: string): string {
-	return v.replace(/^"/, '').replace(/"$/, '').trim();
+	return v.replace(/^"/u, '').replace(/"$/u, '').trim();
 }
 
 function applyOperator(f: Mutable<SearchFilters>, key: string, value: string, ctx: OperatorContext): boolean {
@@ -257,14 +257,14 @@ export function parseDateRange(v: string, now: number): [number, number] | undef
 		const t = startOfDay(now) - DAY;
 		return [t, t + DAY];
 	}
-	let m = /^(\d+)([dwmy])$/.exec(s);
+	let m = /^(\d+)([dwmy])$/u.exec(s);
 	if (m) {
 		const n = Number(m[1]);
 		const mult = { d: 1, w: 7, m: 30, y: 365 }[m[2] as 'd' | 'w' | 'm' | 'y'];
 		const t = startOfDay(now - n * mult * DAY);
 		return [t, now + DAY];
 	}
-	m = /^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/.exec(s);
+	m = /^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/u.exec(s);
 	if (m) {
 		const y = Number(m[1]);
 		if (m[3]) {
@@ -281,11 +281,11 @@ export function parseDateRange(v: string, now: number): [number, number] | undef
 
 /** Heuristic from the benchmark: identifier-like or short queries favor lexical retrieval. */
 export function isIdentifierish(q: ParsedQuery): boolean {
-	return q.phrases.length > 0 || q.rawTokens.some(t => /[0-9]|[_./\\#-]|[a-z][A-Z]/.test(t));
+	return q.phrases.length > 0 || q.rawTokens.some(t => /[0-9]|[_./\\#-]|[a-z][A-Z]/u.test(t));
 }
 
 const ACK_RE =
-	/^(?:continue|go on|go ahead|proceed|yes|yep|yeah|y|ok|okay|k|sure|thanks|thank you|ty|do it|done|next|keep going|lgtm|sounds good|great|perfect|nice|cool)[\s.!]*$/i;
+	/^(?:continue|go on|go ahead|proceed|yes|yep|yeah|y|ok|okay|k|sure|thanks|thank you|ty|do it|done|next|keep going|lgtm|sounds good|great|perfect|nice|cool)[\s.!]*$/iu;
 
 /** Trivial acknowledgements are hidden unless `is:ack` is given. */
 export function isAckText(text: string): boolean {
