@@ -5,5 +5,5 @@
     "moduleResolution": "Bundler",
     "types": ["node", "vscode"]
   },
-  "include": ["src"]
+  "include": ["src", "test/copilotMcpConfig.test.ts"]
 }

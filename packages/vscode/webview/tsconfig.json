@@ -8,5 +8,5 @@
     "jsxImportSource": "preact",
     "types": []
   },
-  "include": ["."]
+  "include": [".", "../test/model.test.ts"]
 }
