@@ -23,6 +23,7 @@ All notable changes to Promptback are recorded here. The format follows [Keep a 
 - Changing the chunking options re-chunks every stored prompt instead of leaving stale chunk boundaries.
 - Terminal resume commands are offered only for shell-safe session ids; CSP nonces come from `node:crypto`.
 - The lockfile no longer records registry URLs (`omit-lockfile-registry-resolved` in the committed `.npmrc`), so `npm ci` works unchanged behind an organization's package proxy and such URLs cannot be committed by accident; a test enforces it.
+- Biome 2.6: regexes carry the `u` flag; one duplicate CSS rule merged. New opinion rules that do not fit the code base are off with reasons; Markdown and YAML are excluded from Biome's formatter.
 - The Explorer webview runs on Preact 11 (ESM-only, `useRef` initial values, `Object.is` hook dependencies); no visible change. Build and test tooling on TypeScript 7, Vitest 5 and vsce 4.
 
 ### Fixed

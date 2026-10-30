@@ -39,7 +39,7 @@ const CHANGELOG = 'CHANGELOG.md';
 const read = rel => JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
 const current = read('package.json').version;
 const next = bump(current, spec);
-if (!/^\d+\.\d+\.\d+$/.test(next)) {
+if (!/^\d+\.\d+\.\d+$/u.test(next)) {
 	console.error(`Not a release version: ${next}`);
 	process.exit(2);
 }
@@ -82,7 +82,7 @@ if (!changelog.includes(marker)) {
 const date = new Date().toISOString().slice(0, 10);
 const repoUrl = 'https://github.com/spencrr/promptback';
 let updatedChangelog = changelog.replace(marker, `${marker}\n\n## [${next}] - ${date}`);
-updatedChangelog = updatedChangelog.replace(/\n\[unreleased\]: .*$/im, '');
+updatedChangelog = updatedChangelog.replace(/\n\[unreleased\]: .*$/imu, '');
 updatedChangelog = `${updatedChangelog.trimEnd()}\n\n[unreleased]: ${repoUrl}/compare/v${next}...HEAD\n[${next}]: ${repoUrl}/compare/v${current}...v${next}\n`;
 edits.set(CHANGELOG, updatedChangelog);
 
@@ -135,6 +135,6 @@ function bump(version, how) {
 		case 'patch':
 			return `${major}.${minor}.${patch + 1}`;
 		default:
-			return how.replace(/^v/, '');
+			return how.replace(/^v/u, '');
 	}
 }

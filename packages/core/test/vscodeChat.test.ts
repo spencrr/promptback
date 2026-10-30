@@ -40,11 +40,11 @@ describe('replayMutationLog (mirrors vscode ObjectMutationLog.read)', () => {
 	});
 
 	it('rejects logs without an initial entry and prototype-polluting paths', () => {
-		expect(() => replayMutationLog(lines({ kind: 1, k: ['a'], v: 1 }))).toThrow(/initial/);
+		expect(() => replayMutationLog(lines({ kind: 1, k: ['a'], v: 1 }))).toThrow(/initial/u);
 		expect(() => replayMutationLog(lines({ kind: 0, v: {} }, { kind: 1, k: ['__proto__', 'x'], v: 1 }))).toThrow(
-			/Unsafe/,
+			/Unsafe/u,
 		);
-		expect(() => replayMutationLog([])).toThrow(/Empty/);
+		expect(() => replayMutationLog([])).toThrow(/Empty/u);
 	});
 });
 

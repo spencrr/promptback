@@ -62,7 +62,7 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
 			headers.authorization = `Bearer ${this.opts.apiKey}`;
 			headers['api-key'] = this.opts.apiKey;
 		}
-		const res = await (this.opts.fetch ?? fetch)(`${this.opts.baseUrl.replace(/\/$/, '')}/embeddings`, {
+		const res = await (this.opts.fetch ?? fetch)(`${this.opts.baseUrl.replace(/\/$/u, '')}/embeddings`, {
 			method: 'POST',
 			headers,
 			body: JSON.stringify(body),

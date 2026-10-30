@@ -48,12 +48,12 @@ describe('describeOnnxRuntimeError', () => {
 				'win32-arm64 (Node v24.0.0). Install the build made for win32-arm64: a VSIX whose name ends in "-win32-arm64", ' +
 				'or reinstall the CLI on this machine.',
 		);
-		expect(r.detail).toMatch(/^win32-arm64, Node v24\.0\.0: Cannot find module/);
+		expect(r.detail).toMatch(/^win32-arm64, Node v24\.0\.0: Cannot find module/u);
 	});
 
 	it('says so when no native binaries are present at all, or when the package root cannot be inspected', () => {
 		const none = describeOnnxRuntimeError(missingBinding('/x'), env({ installedTargets: () => [] }));
-		expect(none.message).toMatch(/contains no native binaries at all, so none for win32-arm64/);
+		expect(none.message).toMatch(/contains no native binaries at all, so none for win32-arm64/u);
 		const unreadable = describeOnnxRuntimeError(
 			missingBinding('/x'),
 			env({
@@ -62,7 +62,7 @@ describe('describeOnnxRuntimeError', () => {
 				},
 			}),
 		);
-		expect(unreadable.message).toMatch(/^This installation of ONNX Runtime has no binaries for win32-arm64/);
+		expect(unreadable.message).toMatch(/^This installation of ONNX Runtime has no binaries for win32-arm64/u);
 	});
 
 	it('points at the Visual C++ runtime for a Windows load failure, with the installer for this architecture', () => {
@@ -71,7 +71,7 @@ describe('describeOnnxRuntimeError', () => {
 			{ code: 'ERR_DLOPEN_FAILED' },
 		);
 		const r = describeOnnxRuntimeError(e, env());
-		expect(r.message).toMatch(/Visual C\+\+ Redistributable is missing/);
+		expect(r.message).toMatch(/Visual C\+\+ Redistributable is missing/u);
 		expect(r.message).toContain('https://aka.ms/vs/17/release/vc_redist.arm64.exe');
 		expect(describeOnnxRuntimeError(e, env({ arch: 'x64' })).message).toContain('vc_redist.x64.exe');
 	});
@@ -80,12 +80,12 @@ describe('describeOnnxRuntimeError', () => {
 		const e = Object.assign(new Error('%1 is not a valid Win32 application.\r\n\\\\?\\C:\\x.node'), {
 			code: 'ERR_DLOPEN_FAILED',
 		});
-		expect(describeOnnxRuntimeError(e, env()).message).toMatch(/built for another CPU architecture/);
+		expect(describeOnnxRuntimeError(e, env()).message).toMatch(/built for another CPU architecture/u);
 	});
 
 	it('explains unsupported platforms in terms of the alternatives', () => {
 		const r = describeOnnxRuntimeError(missingBinding('/x'), env({ platform: 'darwin', arch: 'x64' }));
-		expect(r.message).toMatch(/no build for darwin-x64; semantic search needs the "hashed" embedding provider/);
+		expect(r.message).toMatch(/no build for darwin-x64; semantic search needs the "hashed" embedding provider/u);
 	});
 
 	it('keeps the first line of anything else', () => {
@@ -146,6 +146,6 @@ describe.skipIf(!isOnnxRuntimeSupported())('onnxruntime-node on this platform', 
 describe.skipIf(isOnnxRuntimeSupported())('onnxruntime-node on an unsupported platform', () => {
 	it('fails with the alternatives spelled out', async () => {
 		await expect(loadOnnxRuntime()).rejects.toBeInstanceOf(NativeRuntimeError);
-		await expect(loadOnnxRuntime()).rejects.toThrow(/"hashed" embedding provider/);
+		await expect(loadOnnxRuntime()).rejects.toThrow(/"hashed" embedding provider/u);
 	});
 });

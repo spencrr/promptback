@@ -55,7 +55,7 @@ npm workspaces, TypeScript throughout, one Biome config. `packages/core` ships a
 ## Conventions
 
 - Tabs, single quotes, 120 columns, LF, UTF-8 (`.editorconfig`, Biome). ESM with `.js` import suffixes; `import type` for type-only imports. JSON files use two spaces because npm rewrites `package.json` that way.
-- Every stable Biome group is on. Disabled rules are listed in `biome.jsonc` with a reason each. Suppress inline only per file/range/line with a reason (`// biome-ignore <rule>: why`); never silence a rule globally to make a finding go away.
+- Every stable Biome group is on. Disabled rules are listed in `biome.jsonc` with a reason each. Biome does not touch Markdown or YAML (`.editorconfig` does); a Biome minor can add rules, so take its bumps deliberately and triage each new rule (fix, or disable with a reason), never with a blanket suppression. Suppress inline only per file/range/line with a reason (`// biome-ignore <rule>: why`); never silence a rule globally to make a finding go away.
 - No shell-string execution: `execFile`/`fork` with argument arrays and `process.execPath`; scripts are resolved with `require.resolve`. Session ids go into terminal commands only when `isShellSafeId` says so.
 - Every stochastic step is seeded or cryptographic: k-means uses deterministic farthest-first seeding, the hashed embedder takes a seed, nonces come from `node:crypto`.
 - Cache keys cover what changes results: vectors are keyed by model fingerprint + chunk-text hash; chunking options are recorded in `meta.chunking` and a change re-chunks everything; source cursors carry a `version` to force re-reads when a projection changes.

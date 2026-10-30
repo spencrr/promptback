@@ -89,8 +89,8 @@ export function describeOnnxRuntimeError(
 		requireStack?: unknown;
 	};
 	const raw = typeof err.message === 'string' ? err.message : String(e);
-	const firstLine = raw.split(/\r?\n/, 1)[0] ?? raw;
-	const detail = `${target}, Node ${env.nodeVersion}: ${raw.replace(/\s+/g, ' ').trim()}`;
+	const firstLine = raw.split(/\r?\n/u, 1)[0] ?? raw;
+	const detail = `${target}, Node ${env.nodeVersion}: ${raw.replace(/\s+/gu, ' ').trim()}`;
 	const process_ = `this process is ${target} (Node ${env.nodeVersion})`;
 
 	if (!isOnnxRuntimeSupported(env.platform, env.arch)) {
@@ -130,10 +130,10 @@ export function describeOnnxRuntimeError(
 	}
 	if (
 		err.code === 'ERR_DLOPEN_FAILED' ||
-		/dlopen|could not be found|cannot open shared object|not a valid/i.test(raw)
+		/dlopen|could not be found|cannot open shared object|not a valid/iu.test(raw)
 	) {
 		if (env.platform === 'win32') {
-			if (/not a valid/i.test(raw)) {
+			if (/not a valid/iu.test(raw)) {
 				return {
 					message: `The ONNX Runtime binary is built for another CPU architecture (${firstLine}); ${process_}. Install the build made for ${target}.`,
 					detail,

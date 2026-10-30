@@ -23,7 +23,7 @@ class FakeEmbedder implements EmbeddingProvider {
 	};
 	private vec(text: string): Float32Array {
 		const v = new Float32Array(64);
-		for (const w of text.toLowerCase().match(/[a-z]+/g) ?? []) {
+		for (const w of text.toLowerCase().match(/[a-z]+/gu) ?? []) {
 			const t = FakeEmbedder.SYN[w] ?? w;
 			let h = 0;
 			for (const ch of t) {
@@ -193,12 +193,12 @@ describe('PromptSearchEngine', () => {
 		const res = await engine.search('one pager about the tree view');
 		expect(res.semanticUnavailable).toBe(false);
 		const top = res.hits[0]!;
-		expect(top.prompt.text).toMatch(/design doc for the tree view/);
+		expect(top.prompt.text).toMatch(/design doc for the tree view/u);
 		expect(top.duplicates).toHaveLength(1);
 		expect(top.semanticRank).toBe(1);
 		const link = sessionOpenTargets(top.session)[0]!;
 		expect(link.kind).toBe('agents-window');
-		expect(link.uri).toMatch(/^vscode:\/\/agents\/agent-host-session\/copilotcli\/host-1/);
+		expect(link.uri).toMatch(/^vscode:\/\/agents\/agent-host-session\/copilotcli\/host-1/u);
 		await engine.close();
 	});
 
@@ -214,13 +214,13 @@ describe('PromptSearchEngine', () => {
 		expect(flex.hits[0]!.session.workspaceUri).toBe('file:///c%3A/src/webapp');
 		// Filters exclude the only lexical match; semantic neighbours from the allowed set may remain.
 		expect((await engine.search('retry_policy repo:PyRIT')).hits.map(h => h.prompt.text).join()).not.toMatch(
-			/retry_policy/,
+			/retry_policy/u,
 		);
 		expect((await engine.search('retry_policy mode:lex repo:PyRIT')).hits).toHaveLength(0);
 		expect((await engine.search('retry_policy')).hits[0]!.lexicalRank).toBe(1);
 		expect((await engine.search('"tree view" -goals')).hits).toHaveLength(0);
 		const recent = await engine.search('');
-		expect(recent.hits[0]!.prompt.text).toMatch(/retry_policy/);
+		expect(recent.hits[0]!.prompt.text).toMatch(/retry_policy/u);
 		expect(recent.hits.map(h => h.prompt.timestamp)).toEqual(
 			[...recent.hits.map(h => h.prompt.timestamp)].sort((a, b) => b - a),
 		);
@@ -268,7 +268,7 @@ describe('PromptSearchEngine', () => {
 		expect((await engine.explore('tree view')).semantic.state).toBe('failed');
 		expect(attempts).toBe(1);
 		expect(engine.status().semantic.state).toBe('failed');
-		expect(engine.status().errors[0]).toMatch(/^Semantic search unavailable: /);
+		expect(engine.status().errors[0]).toMatch(/^Semantic search unavailable: /u);
 
 		// An explicit sync tries again (the user may have fixed the installation).
 		await engine.sync();
@@ -361,7 +361,7 @@ describe('PromptSearchEngine', () => {
 		engines.push(e);
 		const r = await e.sync();
 		expect(r.addedPrompts).toBe(6);
-		expect(r.errors.join('\n')).toMatch(/prompt source 'codex'.*enabled.*home/s);
+		expect(r.errors.join('\n')).toMatch(/prompt source 'codex'.*enabled.*home/su);
 	});
 
 	it('loads the model only for queries that need it and frees memory when idle', async () => {
@@ -479,8 +479,8 @@ describe('PromptSearchEngine', () => {
 		expect(ex.rows.every(r => r.matchedLexical || r.matchedSemantic || ex.rows.indexOf(r) < 20)).toBe(true);
 
 		const tree = await engine.explore('design doc tree view');
-		expect(tree.rows.filter(r => /design doc/.test(r.preview))).toHaveLength(2);
-		expect(new Set(tree.rows.filter(r => /design doc/.test(r.preview)).map(r => r.hash)).size).toBe(1);
+		expect(tree.rows.filter(r => /design doc/u.test(r.preview))).toHaveLength(2);
+		expect(new Set(tree.rows.filter(r => /design doc/u.test(r.preview)).map(r => r.hash)).size).toBe(1);
 
 		const all = await engine.explore('');
 		expect(all.rows).toHaveLength(12);

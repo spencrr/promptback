@@ -79,7 +79,7 @@ export interface PromptSourcePlugin<O = unknown> extends ConfigurablePlugin<O> {
  * from folder and file names on disk, so anything else is left out of terminal targets rather than quoted.
  */
 export function isShellSafeId(id: string): boolean {
-	return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id);
+	return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(id);
 }
 
 /** Options every source has; plugins extend this schema. */

@@ -97,7 +97,7 @@ export function allowedRows(
 
 // ---- 2a. lexical retrieval ----------------------------------------------------------------------------------------
 
-const quote = (t: string) => `"${t.replace(/"/g, '""')}"`;
+const quote = (t: string) => `"${t.replace(/"/gu, '""')}"`;
 
 /** All FTS hits (BM25 order) for: every term + phrase (`and`), any term (`or`). Unfiltered rowids. */
 export function lexicalHits(store: Store, q: ParsedQuery): { and: number[]; or: number[] } {
@@ -268,7 +268,7 @@ export function similarityStats(dense: readonly DenseHit[]): { mean: number; std
 export function lexicalRange(text: string, q: ParsedQuery): [number, number] | undefined {
 	const lower = text.toLowerCase();
 	for (const t of [...q.phrases.map(p => p.toLowerCase()), ...q.terms]) {
-		const m = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u').exec(lower);
+		const m = new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}`, 'u').exec(lower);
 		if (m) {
 			return [m.index, m.index + t.length];
 		}

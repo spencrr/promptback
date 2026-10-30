@@ -24,7 +24,7 @@ describe('Registry', () => {
 		expect(r.get('a')).toEqual({ id: 'a' });
 		expect(r.has('c')).toBe(false);
 		expect(() => r.register({ id: 'a' })).toThrow(RegistryError);
-		expect(() => r.require('c')).toThrow(/Unknown thing 'c'\. Known: a, b/);
+		expect(() => r.require('c')).toThrow(/Unknown thing 'c'\. Known: a, b/u);
 	});
 
 	it('validates plugin options with readable errors', () => {
@@ -41,7 +41,7 @@ describe('Registry', () => {
 			error = e;
 		}
 		expect(error).toBeInstanceOf(PluginOptionsError);
-		expect((error as Error).message).toMatch(/^Invalid options for widget 'p': n: .*; s: /);
+		expect((error as Error).message).toMatch(/^Invalid options for widget 'p': n: .*; s: /u);
 	});
 });
 
@@ -56,10 +56,10 @@ describe('embedding provider registry', () => {
 				{ kind: 'openai-compatible', baseUrl: 'not a url', model: '' },
 				{ cacheDir: 'x', allowDownload: false },
 			),
-		).rejects.toThrow(/Invalid options for embedding provider 'openai-compatible': baseUrl: .*; model: /);
+		).rejects.toThrow(/Invalid options for embedding provider 'openai-compatible': baseUrl: .*; model: /u);
 		await expect(
 			createEmbeddingProvider({ kind: 'nope' }, { cacheDir: 'x', allowDownload: false }),
-		).rejects.toThrow(/Unknown embedding provider 'nope'/);
+		).rejects.toThrow(/Unknown embedding provider 'nope'/u);
 	});
 
 	it('accepts a third-party provider through its own registry', async () => {
@@ -111,7 +111,7 @@ describe('local model registry', () => {
 				files: [],
 			}),
 		);
-		expect(() => loadModelManifest(dir)).toThrow(/not a valid model manifest: dims: .*; files: /);
+		expect(() => loadModelManifest(dir)).toThrow(/not a valid model manifest: dims: .*; files: /u);
 		fs.writeFileSync(
 			path.join(dir, 'model.json'),
 			JSON.stringify({
@@ -130,7 +130,7 @@ describe('local model registry', () => {
 		// Re-reading the same manifest is fine; redefining the id differently is not.
 		expect(loadModelManifest(dir)).toEqual(spec);
 		fs.writeFileSync(path.join(dir, 'model.json'), JSON.stringify({ ...spec, dims: 128 }));
-		expect(() => loadModelManifest(dir)).toThrow(/redefines model 'my-model'/);
+		expect(() => loadModelManifest(dir)).toThrow(/redefines model 'my-model'/u);
 	});
 });
 

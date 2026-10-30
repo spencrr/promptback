@@ -52,7 +52,7 @@ const markdownNotes: PromptSourcePlugin<z.infer<typeof options>> = {
 				const key = `markdown-notes:${file.name}`;
 				const prompts: PromptRecord[] = fs
 					.readFileSync(file.path, 'utf8')
-					.split(/\r?\n/)
+					.split(/\r?\n/u)
 					.filter(line => line.startsWith('> '))
 					.map((line, i) => ({
 						id: `${key}:${i}`,

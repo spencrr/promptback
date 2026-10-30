@@ -370,7 +370,7 @@ function snippet(text: string, range?: readonly [number, number]): string {
 
 /** Collapses whitespace and cuts to `max` characters. */
 function flat(text: string, max: number): string {
-	const t = text.replace(/\s+/g, ' ').trim();
+	const t = text.replace(/\s+/gu, ' ').trim();
 	return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 

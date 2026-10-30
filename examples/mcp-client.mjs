@@ -27,7 +27,7 @@ try {
 	const text = r => r.content.map(c => c.text).join('\n');
 	const found = await client.callTool({ name: 'search_prompts', arguments: { query, limit: 3 } });
 	console.log(text(found));
-	const id = /prompt: (\S+)/.exec(text(found))?.[1];
+	const id = /prompt: (\S+)/u.exec(text(found))?.[1];
 	if (id) {
 		console.log(`\n--- get_prompt ${id} ---`);
 		console.log(text(await client.callTool({ name: 'get_prompt', arguments: { id } })));

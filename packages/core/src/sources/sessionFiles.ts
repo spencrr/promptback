@@ -125,7 +125,7 @@ export function forEachJsonLine(
 
 /** The first line of a text, trimmed to `max` characters, for titles. */
 export function firstLine(text: string, max: number): string {
-	const line = text.trim().split(/\r?\n/, 1)[0] ?? '';
+	const line = text.trim().split(/\r?\n/u, 1)[0] ?? '';
 	return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
@@ -163,7 +163,7 @@ export function toEpochMs(v: unknown): number | undefined {
 
 /** Name of the leading XML-ish tag of an injected message (`<task-notification>` → `task-notification`), if any. */
 export function leadingTag(text: string): string | undefined {
-	return /^\s*<([a-zA-Z][\w-]*)[\s>]/.exec(text)?.[1];
+	return /^\s*<([a-zA-Z][\w-]*)[\s>]/u.exec(text)?.[1];
 }
 
 /** Errors from readers that should be surfaced per file but not stop the sync. */

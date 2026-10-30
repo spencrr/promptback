@@ -96,10 +96,10 @@ function meanSim(sim: Float32Array, i: number, members: readonly number[], n: nu
 function headline(text: string): string {
 	const line =
 		text
-			.split(/\r?\n/)
-			.map(l => l.replace(/^[#>*\-\s`]+/, '').trim())
+			.split(/\r?\n/u)
+			.map(l => l.replace(/^[#>*\-\s`]+/u, '').trim())
 			.find(l => l.length >= 8) ?? '';
-	return line.length > 48 ? `${line.slice(0, 47).replace(/\s+\S*$/, '')}…` : line;
+	return line.length > 48 ? `${line.slice(0, 47).replace(/\s+\S*$/u, '')}…` : line;
 }
 
 function dot(a: Float32Array, b: Float32Array): number {
@@ -249,12 +249,12 @@ function labelTerms(
 }
 
 const NOISE =
-	/^(?:https?|www|com|src|users?|true|false|null|undefined|here|there|below|above|following|particular|necessary|great|simplest|clean|original|actually|really|currently|already|instead|maybe|probably|something|anything|everything|thing|things|way|ways|lot|bit|kind|sure|okay|thanks|thank|good|better|best|nice|new|old|first|last|next|done|still|well|much|many|more|most|less|least|each|every|both|either|neither|etc|via|per|one|two|three)$/;
+	/^(?:https?|www|com|src|users?|true|false|null|undefined|here|there|below|above|following|particular|necessary|great|simplest|clean|original|actually|really|currently|already|instead|maybe|probably|something|anything|everything|thing|things|way|ways|lot|bit|kind|sure|okay|thanks|thank|good|better|best|nice|new|old|first|last|next|done|still|well|much|many|more|most|less|least|each|every|both|either|neither|etc|via|per|one|two|three)$/u;
 
 /** Words considered for topic labels: lowercase alphabetic identifiers, no stopwords, hex ids or noise. */
 export function topicTokens(text: string): string[] {
 	return contentTokens(text.slice(0, 4000)).filter(
-		t => t.length >= 4 && t.length <= 20 && /^[a-z][a-z_]*[a-z]$/.test(t) && !NOISE.test(t),
+		t => t.length >= 4 && t.length <= 20 && /^[a-z][a-z_]*[a-z]$/u.test(t) && !NOISE.test(t),
 	);
 }
 

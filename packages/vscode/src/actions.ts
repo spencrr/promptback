@@ -27,8 +27,8 @@ export async function insertIntoChat(prompt: PromptRecord): Promise<void> {
 
 export async function previewPrompt(prompt: PromptRecord, session: SessionInfo | undefined): Promise<void> {
 	const name =
-		(session?.title ?? prompt.text.split(/\r?\n/, 1)[0] ?? 'prompt')
-			.replace(/[\\/:*?"<>|#%\r\n]+/g, ' ')
+		(session?.title ?? prompt.text.split(/\r?\n/u, 1)[0] ?? 'prompt')
+			.replace(/[\\/:*?"<>|#%\r\n]+/gu, ' ')
 			.trim()
 			.slice(0, 60) || 'prompt';
 	const uri = vscode.Uri.from({ scheme: PREVIEW_SCHEME, path: `/${name}.md`, query: encodeURIComponent(prompt.id) });

@@ -312,7 +312,7 @@ function printSources(engine: PromptSearchEngine, json: boolean): void {
 function printHit(h: SearchHit, n: number): void {
 	const s = h.session;
 	const when = new Date(h.prompt.timestamp).toISOString().slice(0, 10);
-	const firstLine = h.prompt.text.trim().split(/\r?\n/, 1)[0]!.slice(0, 110);
+	const firstLine = h.prompt.text.trim().split(/\r?\n/u, 1)[0]!.slice(0, 110);
 	const where = [s.repository ?? s.cwd, s.client, when].filter(Boolean).join(' · ');
 	const ranks = [h.lexicalRank ? `L${h.lexicalRank}` : '', h.semanticRank ? `S${h.semanticRank}` : '']
 		.filter(Boolean)

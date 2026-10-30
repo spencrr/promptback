@@ -254,7 +254,7 @@ export function projectChatSession(file: ChatSessionFile, raw: SerializedSession
 }
 
 function firstLine(text: string, max: number): string {
-	const line = text.trim().split(/\r?\n/, 1)[0] ?? '';
+	const line = text.trim().split(/\r?\n/u, 1)[0] ?? '';
 	return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
@@ -264,8 +264,8 @@ function uriToPath(uri: string): string {
 	}
 	try {
 		let p = decodeURIComponent(new URL(uri).pathname);
-		if (/^\/[a-zA-Z]:/.test(p)) {
-			p = p.slice(1).replace(/\//g, '\\');
+		if (/^\/[a-zA-Z]:/u.test(p)) {
+			p = p.slice(1).replace(/\//gu, '\\');
 		}
 		return p;
 	} catch {

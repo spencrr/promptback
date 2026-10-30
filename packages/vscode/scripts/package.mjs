@@ -69,7 +69,7 @@ copy(ortDir, path.join(nm, 'onnxruntime-node'), rel => {
 	}
 	if (p.startsWith(`bin/napi-v6/${platform}/${arch}`)) {
 		// DirectML / DXC are only needed for the GPU execution provider; we run on CPU.
-		return !/(DirectML|dxcompiler|dxil)\.dll$/i.test(p);
+		return !/(DirectML|dxcompiler|dxil)\.dll$/iu.test(p);
 	}
 	return false;
 });

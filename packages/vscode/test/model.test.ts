@@ -125,7 +125,7 @@ describe('grouping', () => {
 		const now = new Date(2026, 9, 6, 12).getTime();
 		expect(dayLabel(now - 3_600_000, now)).toBe('Today');
 		expect(dayLabel(now - DAY, now)).toBe('Yesterday');
-		expect(dayLabel(now - 30 * DAY, now)).toMatch(/2026/);
+		expect(dayLabel(now - 30 * DAY, now)).toMatch(/2026/u);
 	});
 
 	it('assigns palette colours by frequency and greys out the rest', () => {

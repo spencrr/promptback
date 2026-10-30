@@ -354,7 +354,7 @@ function buildOptions(context: vscode.ExtensionContext): HostInitOptions {
 
 /** `promptback.sources.<id>` (on/off) and `promptback.sources.<id>Home` (folder) per registered source, e.g. `claudeCode`. */
 export function sourceSettingKey(sourceId: string): string {
-	return sourceId.replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase());
+	return sourceId.replace(/-([a-z])/gu, (_, ch: string) => ch.toUpperCase());
 }
 
 function sourceOptionsFromSettings(c: vscode.WorkspaceConfiguration): Record<string, unknown> {

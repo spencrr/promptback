@@ -95,7 +95,7 @@ describe('OpenAI-compatible embedding provider', () => {
 		} catch (e) {
 			message = (e as Error).message;
 		}
-		expect(message).toMatch(/429 Too Many Requests .*quota/);
+		expect(message).toMatch(/429 Too Many Requests .*quota/u);
 		expect(message).not.toContain('sk-secret');
 		expect(JSON.stringify(p)).not.toContain('sk-secret');
 		expect(JSON.stringify(p)).toContain('"apiKey":"[redacted]"');

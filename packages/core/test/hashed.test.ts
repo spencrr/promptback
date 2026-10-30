@@ -31,7 +31,11 @@ describe('hashed embedding provider', () => {
 		const [a, b] = await p.embedDocuments(['fix the flaky retry test', 'fix the flaky retry test']);
 		expect(a).toEqual(b);
 		expect(Math.hypot(...a!)).toBeCloseTo(1, 5);
-		expect(p.info).toMatchObject({ dims: 256, local: true, fingerprint: expect.stringMatching(/^hashed:v1:256:/) });
+		expect(p.info).toMatchObject({
+			dims: 256,
+			local: true,
+			fingerprint: expect.stringMatching(/^hashed:v1:256:/u),
+		});
 		const shuffled = await p.embedQuery('test retry flaky the fix');
 		const similarity = dot(a!, shuffled);
 		expect(similarity).toBeGreaterThan(0.6);
@@ -73,7 +77,7 @@ describe('hashed embedding provider', () => {
 		expect(small?.info.dims).toBe(64);
 		await expect(
 			createEmbeddingProvider({ kind: 'hashed', dims: 7 }, { cacheDir: 'unused', allowDownload: false }),
-		).rejects.toThrow(/dims/);
+		).rejects.toThrow(/dims/u);
 		const empty = await p.embedQuery('');
 		expect(Array.from(empty).every(x => x === 0)).toBe(true);
 	});
